@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+/* Tambahkan sedikit style dasar biar background hitam pekat & smooth */
+body {
+  background-color: #000;
+  color: #fff;
+  font-family: Arial, Helvetica, sans-serif; /* Nanti kita ganti font keren */
+}
