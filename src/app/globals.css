@@ -6,3 +6,22 @@ body {
   color: #fff;
   font-family: Arial, Helvetica, sans-serif; /* Nanti kita ganti font keren */
 }
+
+/* Custom Scrollbar untuk Chrome, Edge, dan Safari */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #09090b; /* Warna background track (Zinc-950) */
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a; /* Warna batang scroll (Zinc-800) */
+  border-radius: 5px;
+  border: 2px solid #09090b; /* Memberi jarak (padding) dengan border */
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46; /* Warna saat di-hover (Zinc-700) */
+}
