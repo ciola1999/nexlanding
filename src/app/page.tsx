@@ -4,6 +4,7 @@ import Hero from '@/components/Hero';
 import BentoGrid from '@/components/BentoGrid';
 import Pricing from '@/components/Pricing';
 import Footer from '@/components/Footer';
+import SelectedWork from '@/components/SelectedWork';
 
 export default function Home() {
   
@@ -27,6 +28,8 @@ export default function Home() {
       />
 
       <BentoGrid />
+
+      <SelectedWork />
 
       <Pricing />
 

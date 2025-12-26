@@ -11,8 +11,11 @@
   "dependencies": {
     "@gsap/react": "^2.1.2",
     "clsx": "^2.1.1",
+    "framer-motion": "^12.23.26",
     "gsap": "^3.14.2",
+    "lenis": "^1.3.16",
     "lucide-react": "^0.562.0",
+    "motion": "^12.23.26",
     "next": "16.1.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
