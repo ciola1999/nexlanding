@@ -6,10 +6,9 @@ import { motion } from "framer-motion";
 export default function Template({ children }: { children: React.ReactNode }) {
   
   // Kita pakai jurus 'as any' lagi biar TypeScript tidak rewel
-  const MotionDiv = (motion as any).div;
 
   return (
-    <MotionDiv
+    <motion.div
       // Posisi Awal: Sedikit di bawah (y: 20) dan transparan (opacity: 0)
       initial={{ y: 20, opacity: 0 }}
       
@@ -20,6 +19,6 @@ export default function Template({ children }: { children: React.ReactNode }) {
       transition={{ ease: "easeInOut", duration: 0.75 }}
     >
       {children}
-    </MotionDiv>
+    </motion.div>
   );
 }

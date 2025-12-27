@@ -3,27 +3,36 @@
 import Link from "next/link";
 import Image from "next/image";
 import { ArrowUpRight } from "lucide-react";
-import { projects } from "@/app/data/projects"; // Pastikan path ini benar
+import { projects } from "@/app/data/projects";
 import { motion } from "framer-motion";
+import TextReveal from "./ui/text-reveal";
 
 export default function SelectedWork() {
-  const MotionImage = (motion as any).div; 
 
   return (
     <section className="py-32 px-6 md:px-12 bg-black">
       <div className="max-w-7xl mx-auto">
         
-        {/* Header Section */}
-        <div className="flex flex-col md:flex-row justify-between items-end mb-16 gap-6">
-          <div>
+        {/* === BAGIAN YANG DIPERBAIKI === */}
+        {/* 1. items-center: Mobile jadi di tengah horizontal.
+            2. md:items-end: Desktop balik ke rata bawah (sejajar tombol).
+        */}
+        <div className="flex flex-col md:flex-row justify-between items-center md:items-end mb-16 gap-6">
+          
+          {/* 3. text-center: Mobile tulisan rata tengah.
+            4. md:text-left: Desktop tulisan rata kiri.
+          */}
+          <div className="text-center md:text-left">
             <span className="text-purple-500 font-medium tracking-wider text-sm uppercase mb-2 block">
               Selected Work
             </span>
             <h2 className="text-4xl md:text-5xl font-bold text-white leading-tight">
-              Crafting Digital <br />
-              <span className="text-gray-500">Masterpieces.</span>
+              <TextReveal text="Crafting Digital" />
+              <br />
+              <TextReveal text="Masterpieces." className="text-gray-500" />
             </h2>
           </div>
+
           <Link 
             href="/projects" 
             className="hidden md:flex items-center gap-2 text-white border-b border-white/20 pb-1 hover:border-white transition-colors"
@@ -31,6 +40,7 @@ export default function SelectedWork() {
             View All Works <ArrowUpRight className="w-4 h-4" />
           </Link>
         </div>
+        {/* ============================== */}
 
         {/* Grid Project */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -42,8 +52,8 @@ export default function SelectedWork() {
                 index === 0 ? "md:col-span-2 aspect-[2/1]" : "aspect-[4/3]"
               }`}
             >
-              <MotionImage
-                layoutId={`image-${project.slug}`} // ID UNIK (Magic Key-nya di sini)
+              <motion.div
+                layoutId={`image-${project.slug}`} 
                 className="w-full h-full relative"
                 transition={{ duration: 0.5, ease: "easeInOut" }}
               >
@@ -53,7 +63,7 @@ export default function SelectedWork() {
                 fill
                 className="object-cover transition-transform duration-700 group-hover:scale-105"
               />
-              </MotionImage>
+              </motion.div>
               <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors" />
               
               <div className="absolute bottom-0 left-0 p-8 w-full flex justify-between items-end">
