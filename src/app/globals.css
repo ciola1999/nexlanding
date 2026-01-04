@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+/* Tambahkan sedikit style dasar biar background hitam pekat & smooth */
+body {
+  background-color: #000;
+  color: #fff;
+  font-family: Arial, Helvetica, sans-serif; /* Nanti kita ganti font keren */
+}
+
+/* Custom Scrollbar untuk Chrome, Edge, dan Safari */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #09090b; /* Warna background track (Zinc-950) */
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a; /* Warna batang scroll (Zinc-800) */
+  border-radius: 5px;
+  border: 2px solid #09090b; /* Memberi jarak (padding) dengan border */
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46; /* Warna saat di-hover (Zinc-700) */
+}
+
+html.lenis, html.lenis body {
+  height: auto;
+}
+
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+.lenis.lenis-scrolling iframe {
+  pointer-events: none;
+}
+
+/* Hanya sembunyikan kursor di device yang punya mouse (Desktop) */
+@media (hover: hover) and (pointer: fine) {
+  body {
+    cursor: none; /* Sembunyikan panah default */
+  }
+  
+  /* Pastikan elemen interaktif juga tidak memunculkan kursor pointer (tangan) */
+  a, button, [role="button"], input {
+    cursor: none; 
+  }
+}
+
+/* Sembunyikan Custom Cursor di Mobile/Tablet */
+@media (hover: none) and (pointer: coarse) {
+  .custom-cursor-element {
+    display: none !important;
+  }
+}
+
+/* globals.css atau module css */
+
+.cursor-dot, 
+.cursor-outline {
+  /* Default styles... */
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* HANYA tampilkan jika perangkat mendukung hover (mouse) */
+@media (hover: hover) and (pointer: fine) {
+  .cursor-dot, 
+  .cursor-outline {
+    display: block;
+  }
+}
+
+/* Sembunyikan di device touch */
+@media (hover: none) {
+  .cursor-dot, 
+  .cursor-outline {
+    display: none !important;
+  }
+}
