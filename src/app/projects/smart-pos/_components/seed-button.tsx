@@ -27,7 +27,7 @@ export default function SeedButton() {
         disabled={isLoading}
         className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {isLoading ? 'Sedang mengisi...' : '+ Isi Data Dummy'}
+        {isLoading ? 'Menambah...' : '+ 1 Produk Acak'}
       </button>
       {message && (
         <span
