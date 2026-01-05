@@ -1,4 +1,5 @@
-import { Product } from '@/db/schema';
+import type { Product } from '@/db/schema';
+export type { Product };
 
 // Helper: Format Angka ke Rupiah
 const formatRupiah = (number: number) => {

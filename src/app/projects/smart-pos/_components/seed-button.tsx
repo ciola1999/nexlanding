@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { seedDummyProducts } from '@/actions/products';
+import { seedDummyProducts } from '@/app/projects/smart-pos/_actions/products';
 
 export default function SeedButton() {
   const [isLoading, setIsLoading] = useState(false);

@@ -1,104 +1,83 @@
+// src/app/projects/smart-pos/page.tsx
+
 import Link from 'next/link';
-import { getProducts } from '@/actions/products'; // Import Server Action
+import { getProducts } from '@/app/projects/smart-pos/_actions/products';
 import StatusBadge from './_components/status-badge';
-import SeedButton from './_components/seed-button';
-import ProductTable from './_components/product-table';
-import ResetButton from './_components/reset-button';
+import POSInterface from './_components/pos-interface';
+// 👇 Import Component Baru
+import InventoryDashboard from './_components/InventoryDashboard';
+import { Store, LayoutGrid } from 'lucide-react';
+import { Toaster } from 'sonner';
 
-// Ubah function menjadi ASYNC karena kita memanggil database
-export default async function PosPage() {
-  // 1. Fetch data dari database (Server-side)
+export const metadata = {
+  title: 'Kasir - NexLanding POS',
+};
+
+type Props = {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+};
+
+export default async function PosPage({ searchParams }: Props) {
   const { data: products } = await getProducts();
+  const params = await searchParams;
+  const isPosMode = params.view === 'cashier';
 
-  // 2. Hitung statistik sederhana untuk Widget
   const totalProducts = products ? products.length : 0;
   const lowStockCount = products
     ? products.filter((p) => p.stock < 20).length
     : 0;
 
   return (
-    <div className="p-8 max-w-7xl mx-auto min-h-screen bg-gray-50/30">
-      {/* Header Section */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+    <div className="min-h-screen bg-gray-50/30 selection:bg-blue-100 selection:text-blue-900">
+      <Toaster position="bottom-right" richColors closeButton />
+
+      {/* Navbar - Sticky & Glass Effect for Modern Feel */}
+      <div className="bg-white/80 backdrop-blur-md border-b border-gray-200 px-8 py-4 flex items-center justify-between sticky top-0 z-50 transition-all">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
-            Smart POS Dashboard
+          <h1 className="text-xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
+            <span className="text-blue-600">Nex</span>POS
+            <StatusBadge />
           </h1>
-          <p className="text-gray-500 mt-1">
-            Sistem Manajemen Kasir & Inventory
-          </p>
         </div>
-        <StatusBadge />
-      </div>
-
-      {/* Grid Widget (Statistik & Action) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        {/* Widget 1: Total Produk */}
-        <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
-              Total Produk
-            </h2>
-            <span className="text-indigo-600 bg-indigo-50 p-2 rounded-lg">
-              📦
-            </span>
-          </div>
-          <p className="text-3xl font-bold text-gray-900">{totalProducts}</p>
-          <p className="text-xs text-gray-400 mt-1">
-            Item terdaftar di database
-          </p>
-        </div>
-
-        {/* Widget 2: Stok Menipis */}
-        <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
-              Perlu Restock
-            </h2>
-            <span className="text-orange-600 bg-orange-50 p-2 rounded-lg">
-              ⚠️
-            </span>
-          </div>
-          <p
-            className={`text-3xl font-bold ${
-              lowStockCount > 0 ? 'text-red-600' : 'text-emerald-600'
+        <div className="flex bg-gray-100 p-1 rounded-lg">
+          <Link
+            href="/projects/smart-pos?view=inventory"
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${
+              !isPosMode
+                ? 'bg-white text-gray-900 shadow-sm font-bold scale-100'
+                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-200/50'
             }`}
           >
-            {lowStockCount}
-          </p>
-          <p className="text-xs text-gray-400 mt-1">
-            Produk dengan stok &lt; 20
-          </p>
-        </div>
-
-        {/* Widget 3: Action Panel (Seed Button) */}
-        <div className="p-6 bg-gradient-to-br from-white to-gray-50 rounded-xl shadow-sm border border-gray-200 flex flex-col justify-center">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">
-            Database Action
-          </h2>
-          <SeedButton />
-          <ResetButton />
+            <LayoutGrid size={16} /> Inventory
+          </Link>
+          <Link
+            href="/projects/smart-pos?view=cashier"
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${
+              isPosMode
+                ? 'bg-blue-600 text-white shadow-sm font-bold scale-100'
+                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-200/50'
+            }`}
+          >
+            <Store size={16} /> Mode Kasir
+          </Link>
         </div>
       </div>
 
-      {/* Section Tabel Inventory */}
-      <div className="mt-8">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-gray-800">Inventory Produk</h2>
-        </div>
-
-        {/* Render Tabel dengan data yang sudah di-fetch */}
-        <ProductTable data={products || []} />
-      </div>
-
-      {/* Footer Link */}
-      <div className="mt-12 pt-6 border-t border-gray-200">
-        <Link
-          href="/"
-          className="inline-flex items-center text-sm text-gray-500 hover:text-indigo-600 transition-colors font-medium"
-        >
-          &larr; Kembali ke Halaman Portfolio
-        </Link>
+      <div className="p-8 max-w-7xl mx-auto">
+        {isPosMode ? (
+          // Jika kamu mau POSInterface juga dianimasikan, bungkus dia dengan wrapper client component serupa
+          // Untuk sekarang kita pakai animasi CSS standar dulu
+          <div className="animate-in fade-in zoom-in-95 duration-500">
+            <POSInterface initialProducts={products || []} />
+          </div>
+        ) : (
+          // 👇 INI BAGIAN MODERN-NYA
+          <InventoryDashboard
+            products={products || []}
+            totalProducts={totalProducts}
+            lowStockCount={lowStockCount}
+          />
+        )}
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 // Nanti kita buat file schema.ts, sementara biarkan kosong atau comment dulu
-// import * as schema from './schema';
+import * as schema from './schema';
 
 const connectionString = process.env.DATABASE_URL!;
 
@@ -19,5 +19,5 @@ if (process.env.NODE_ENV !== 'production') {
 
 // Masukkan schema ke sini agar autocomplete drizzle bekerja
 export const db = drizzle(client, {
-  // schema
+  schema,
 });
