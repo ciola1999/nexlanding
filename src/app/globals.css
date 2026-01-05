@@ -86,3 +86,26 @@ html.lenis body {
     display: none !important;
   }
 }
+
+.force-show-cursor {
+  cursor: auto !important; /* Kembalikan kursor default */
+}
+
+/* Pastikan semua anak elemen di dalamnya juga punya kursor normal */
+.force-show-cursor * {
+  cursor: auto !important;
+}
+
+/* Khusus link dan tombol, kembalikan kursor jari (pointer) */
+.force-show-cursor a,
+.force-show-cursor button,
+.force-show-cursor [role='button'],
+.force-show-cursor input,
+.force-show-cursor select {
+  cursor: pointer !important;
+}
+
+/* Sembunyikan bola putih custom cursor di halaman ini */
+.force-show-cursor .custom-cursor-element {
+  display: none !important;
+}

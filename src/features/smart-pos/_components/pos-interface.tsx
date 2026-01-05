@@ -4,7 +4,7 @@ import { useState, useMemo, useTransition, useEffect } from 'react';
 import { Product, CartItem } from '@/types';
 import { formatRupiah, cn } from '@/lib/utils';
 import { Trash2, Plus, Minus, Search, Loader2 } from 'lucide-react';
-import { processCheckout } from '@/app/projects/smart-pos/_actions/transaction';
+import { processCheckout } from '@/features/smart-pos/_actions/transaction';
 import { toast } from 'sonner';
 
 interface POSInterfaceProps {

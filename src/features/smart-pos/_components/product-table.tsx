@@ -1,4 +1,4 @@
-import type { Product } from '@/db/schema';
+import type { Product } from '@/features/smart-pos/db/schema';
 export type { Product };
 
 // Helper: Format Angka ke Rupiah

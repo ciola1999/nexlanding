@@ -1,7 +1,13 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 // Nanti kita buat file schema.ts, sementara biarkan kosong atau comment dulu
-import * as schema from './schema';
+import * as smartPosSchema from '../features/smart-pos/db/schema';
+
+const schema = {
+  ...smartPosSchema,
+  // Nanti kalau ada project ke-2, tinggal tambah:
+  // ...projectDuaSchema,
+};
 
 const connectionString = process.env.DATABASE_URL!;
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useTransition } from 'react';
-import { deleteAllProducts } from '@/app/projects/smart-pos/_actions/products';
+import { deleteAllProducts } from '@/features/smart-pos/_actions/products';
 
 export default function ResetButton() {
   const [isPending, startTransition] = useTransition();

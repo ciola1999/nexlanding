@@ -1,7 +1,7 @@
 'use server';
 
 import { db } from '@/db'; // Pastikan path import db benar
-import { orders, orderItems, products } from '@/db/schema';
+import { orders, orderItems, products } from '@/features/smart-pos/db/schema';
 import { revalidatePath } from 'next/cache';
 import { eq, sql } from 'drizzle-orm';
 

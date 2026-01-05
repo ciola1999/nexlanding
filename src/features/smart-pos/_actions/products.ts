@@ -1,7 +1,7 @@
 'use server';
 
 import { db } from '@/db';
-import { products } from '@/db/schema';
+import { products } from '@/features/smart-pos/db/schema';
 import { desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 

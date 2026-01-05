@@ -28,7 +28,8 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts"
+    "**/*.mts",
+    "src/features/smart-pos/_components/main-view.tss"
   ],
   "exclude": ["node_modules"]
 }
