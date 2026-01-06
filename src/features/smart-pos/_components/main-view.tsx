@@ -18,8 +18,18 @@ import StatusBadge from './status-badge';
 import POSInterface from './pos-interface';
 import InventoryDashboard from './InventoryDashboard';
 import DashboardAnalytics from './DashboardAnalytics';
+import HistoryList from './HistoryList';
 
-import { Product } from '../db/schema';
+// 👇 Import schema database (Pastikan path ini benar sesuai struktur projectmu)
+import { Product, Order, OrderItem } from '../db/schema';
+// Jika path '../db/schema' error, coba pakai alias '@' seperti '@/db/schema' atau sesuaikan relatif path-nya.
+
+// 👇 DEFINISI TIPE UTAMA (Diexport agar bisa dipakai di Page & HistoryList)
+export type HistoryRecord = Order & {
+  items: (OrderItem & {
+    product: Product | null;
+  })[];
+};
 
 interface NavButtonProps {
   href: string;
@@ -29,14 +39,19 @@ interface NavButtonProps {
   special?: boolean;
 }
 
+// 👇 Update Interface Props
 interface SmartPosMainViewProps {
   products: Product[];
   currentView: string | undefined;
+  // Wajib menerima array history
+  transactionHistory: HistoryRecord[];
 }
 
 export default function SmartPosMainView({
   products,
   currentView,
+  // 👇 Berikan default value [] agar tidak error jika data belum siap
+  transactionHistory = [],
 }: SmartPosMainViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -52,28 +67,31 @@ export default function SmartPosMainView({
     ? products.filter((p) => p.stock < 20).length
     : 0;
 
-  // --- 1. GSAP Animation Hook ---
-  // Setiap kali 'view' berubah, jalankan animasi smooth ini
+  // --- Awwwards Level Animation ---
   useGSAP(
     () => {
-      // Kill animasi sebelumnya jika user klik cepat-cepat
       gsap.killTweensOf(containerRef.current);
-
-      // Animasi Masuk: Sedikit geser dari bawah (y: 15) ke posisi asli (y: 0)
       gsap.fromTo(
         containerRef.current,
-        { opacity: 0, y: 15, filter: 'blur(5px)' },
+        {
+          opacity: 0,
+          y: 20,
+          filter: 'blur(10px)',
+          scale: 0.98,
+        },
         {
           opacity: 1,
           y: 0,
           filter: 'blur(0px)',
-          duration: 0.4,
-          ease: 'power3.out',
+          scale: 1,
+          duration: 0.5,
+          ease: 'power4.out',
+          stagger: 0.1,
         }
       );
     },
     { dependencies: [view], scope: containerRef }
-  ); // Scope penting untuk Next.js cleanup
+  );
 
   // Render Content Switcher
   const renderContent = () => {
@@ -90,14 +108,32 @@ export default function SmartPosMainView({
         );
       case 'history':
         return (
-          <div className="flex flex-col items-center justify-center h-[60vh] text-neutral-500">
-            <div className="p-6 bg-white/5 rounded-full mb-4 animate-pulse">
-              <History size={48} className="opacity-50" />
+          <div className="space-y-6 h-full">
+            {/* Header Mini Glassmorphism */}
+            <div className="flex items-center justify-between bg-white/5 backdrop-blur-md p-6 rounded-3xl border border-white/10 shadow-2xl">
+              <div>
+                <h2 className="text-3xl font-bold text-white tracking-tight">
+                  Riwayat Transaksi
+                </h2>
+                <p className="text-gray-400 text-sm mt-1">
+                  Database penjualan real-time.
+                </p>
+              </div>
+              <div className="flex flex-col items-end">
+                <span className="text-[10px] text-[#dfff4f] font-mono uppercase tracking-widest mb-1">
+                  Total Records
+                </span>
+                <span className="text-3xl font-black text-[#dfff4f] tabular-nums">
+                  {transactionHistory.length}
+                </span>
+              </div>
             </div>
-            <h3 className="text-xl font-bold text-white mb-2">
-              Transaction History
-            </h3>
-            <p className="text-sm">Riwayat transaksi akan muncul di sini.</p>
+
+            {/* Area List History */}
+            <div className="bg-[#18191e]/50 backdrop-blur-sm rounded-3xl border border-white/5 overflow-hidden min-h-[500px] shadow-inner">
+              {/* 👇 Mengirim data ke komponen HistoryList */}
+              <HistoryList history={transactionHistory} />
+            </div>
           </div>
         );
       case 'cashier':
@@ -110,63 +146,59 @@ export default function SmartPosMainView({
     <div className="min-h-screen bg-[#0f1014] text-white selection:bg-[#dfff4f] selection:text-black force-show-cursor">
       <Toaster position="bottom-right" richColors closeButton theme="dark" />
 
-      {/* Navbar (Backdrop Blur diperkuat untuk feel 'Glass') */}
-      <div className="bg-[#0f1014]/70 backdrop-blur-xl border-b border-white/5 px-6 py-4 flex items-center justify-between sticky top-0 z-50 transition-all duration-300">
-        {/* Logo Area */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-[#dfff4f] to-[#b8d63e] rounded-xl shadow-[0_0_20px_rgba(223,255,79,0.2)] flex items-center justify-center text-black font-extrabold text-lg">
-            N
+      {/* Floating Navbar */}
+      <div className="fixed top-6 left-1/2 -translate-x-1/2 w-[95%] max-w-[1600px] z-50">
+        <div className="bg-[#1c1d24]/80 backdrop-blur-2xl border border-white/10 rounded-2xl px-4 py-3 flex items-center justify-between shadow-2xl shadow-black/50">
+          <div className="flex items-center gap-3 pl-2">
+            <div className="w-9 h-9 bg-[#dfff4f] rounded-lg flex items-center justify-center text-black font-black text-lg shadow-[0_0_15px_rgba(223,255,79,0.4)]">
+              N
+            </div>
+            <div className="hidden md:flex flex-col">
+              <span className="text-sm font-bold leading-none">NexPOS</span>
+              <span className="text-[9px] text-gray-500 tracking-[0.2em]">
+                SYSTEM
+              </span>
+            </div>
           </div>
-          <div className="flex flex-col">
-            <h1 className="text-lg font-bold tracking-tight leading-none">
-              NexPOS
-            </h1>
-            <span className="text-[10px] text-gray-500 font-mono tracking-widest uppercase">
-              Smart System
-            </span>
+
+          <div className="flex bg-black/20 p-1 rounded-xl border border-white/5">
+            <NavButton
+              href="/projects/smart-pos?view=dashboard"
+              active={isDashboardMode}
+              icon={LayoutDashboard}
+              label="Dash"
+            />
+            <NavButton
+              href="/projects/smart-pos?view=inventory"
+              active={isInventoryMode}
+              icon={LayoutGrid}
+              label="Stock"
+            />
+            <NavButton
+              href="/projects/smart-pos?view=history"
+              active={isHistoryMode}
+              icon={History}
+              label="Riwayat"
+            />
+            <div className="w-px h-5 bg-white/10 mx-2 self-center" />
+            <NavButton
+              href="/projects/smart-pos?view=cashier"
+              active={isPosMode}
+              icon={Store}
+              label="Kasir"
+              special
+            />
           </div>
-          <div className="ml-2">
+
+          <div className="pr-2">
             <StatusBadge />
           </div>
         </div>
-
-        {/* Navigation Menu */}
-        <div className="flex bg-[#18191e] p-1.5 rounded-2xl border border-white/5 gap-1 shadow-2xl shadow-black/50">
-          <NavButton
-            href="/projects/smart-pos?view=dashboard"
-            active={isDashboardMode}
-            icon={LayoutDashboard}
-            label="Dashboard"
-          />
-          <NavButton
-            href="/projects/smart-pos?view=inventory"
-            active={isInventoryMode}
-            icon={LayoutGrid}
-            label="Inventory"
-          />
-          <NavButton
-            href="/projects/smart-pos?view=history"
-            active={isHistoryMode}
-            icon={History}
-            label="Riwayat"
-          />
-          <div className="w-px h-6 bg-white/10 mx-1 self-center" />{' '}
-          {/* Separator */}
-          <NavButton
-            href="/projects/smart-pos?view=cashier"
-            active={isPosMode}
-            icon={Store}
-            label="Kasir"
-            special
-          />
-        </div>
       </div>
 
-      {/* Main Content Area */}
-      {/* Container Ref dipasang di sini untuk animasi */}
       <div
         ref={containerRef}
-        className="p-4 md:p-8 max-w-[1600px] mx-auto min-h-[calc(100vh-90px)]"
+        className="pt-28 px-4 md:px-8 max-w-[1600px] mx-auto min-h-screen pb-10"
       >
         {renderContent()}
       </div>
@@ -181,32 +213,24 @@ function NavButton({
   label,
   special,
 }: NavButtonProps) {
-  // Base styles
   let containerClass =
-    'group relative flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ease-out ';
-  const iconClass = 'transition-transform duration-300 group-hover:scale-110';
+    'relative flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all duration-300 ';
 
   if (special && active) {
     containerClass +=
-      'bg-[#dfff4f] text-black shadow-[0_0_20px_rgba(223,255,79,0.3)] font-bold';
+      'bg-[#dfff4f] text-black shadow-[0_0_15px_rgba(223,255,79,0.3)] font-bold scale-105';
   } else if (special) {
     containerClass += 'text-[#dfff4f] hover:bg-[#dfff4f]/10';
   } else if (active) {
-    containerClass += 'bg-white/10 text-white shadow-inner font-semibold';
+    containerClass += 'bg-white/10 text-white shadow-inner';
   } else {
     containerClass += 'text-gray-400 hover:text-white hover:bg-white/5';
   }
 
   return (
-    // PENTING: scroll={false} mencegah halaman lompat ke atas saat ganti tab
     <Link href={href} scroll={false} className={containerClass}>
-      <Icon size={18} className={iconClass} strokeWidth={active ? 2.5 : 2} />
-      <span className="hidden md:inline">{label}</span>
-
-      {/* Indikator Active Dot (Micro-interaction) */}
-      {active && !special && (
-        <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-white rounded-full opacity-50" />
-      )}
+      <Icon size={16} strokeWidth={active ? 2.5 : 2} />
+      <span className="hidden sm:inline">{label}</span>
     </Link>
   );
 }

@@ -1,28 +1,23 @@
 'use server';
 
-import { db } from '@/db';
-import { orders } from '@/features/smart-pos/db/schema';
+import { db } from '@/db'; // Sesuaikan path koneksi DB kamu
+import { orders } from '@/features/smart-pos/db/schema'; // Sesuaikan path schema
 import { desc } from 'drizzle-orm';
 
 export async function getTransactionHistory() {
   try {
-    const history = await db.query.orders.findMany({
-      // 1. Urutkan dari yang paling baru
-      orderBy: [desc(orders.createdAt)],
-      limit: 50,
-
-      // 2. RELASI (Bagian ini yang diubah)
+    const data = await db.query.orders.findMany({
+      orderBy: [desc(orders.createdAt)], // Urutkan dari yang terbaru
       with: {
         items: {
-          // Kita masuk ke dalam 'items', lalu minta ambil data 'product'
           with: {
-            product: true,
+            product: true, // Ambil nama produk relasi
           },
         },
       },
     });
 
-    return { success: true, data: history };
+    return { success: true, data };
   } catch (error) {
     console.error('Error fetching history:', error);
     return { success: false, data: [] };

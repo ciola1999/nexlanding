@@ -1,7 +1,10 @@
 import { Metadata } from 'next';
-import { getProducts } from '@/features/smart-pos/_actions/products'; // Path action baru
 import { Suspense } from 'react';
-import SmartPosMainView from '@/features/smart-pos/_components/main-view'; // Path component baru
+
+// Actions & Components
+import { getProducts } from '@/features/smart-pos/_actions/products'; // Cek path action kamu
+import { getTransactionHistory } from '@/features/smart-pos/_actions/get-history';
+import SmartPosMainView from '@/features/smart-pos/_components/main-view';
 import SmartPosSkeleton from '@/features/smart-pos/_components/Skeleton';
 
 export const metadata: Metadata = {
@@ -9,40 +12,52 @@ export const metadata: Metadata = {
   description: 'Aplikasi Smart POS terintegrasi',
 };
 
+// Pastikan selalu fresh data
+export const dynamic = 'force-dynamic';
+
 type Props = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 };
 
-// 3. Wrapper Component untuk Fetching Data
-// Kita pisahkan ini supaya page utamanya render INSTANT, baru datanya nyusul.
+// --- KOMPONEN PENGAMBIL DATA (SERVER COMPONENT) ---
+// Komponen ini akan "ditahan" oleh Suspense sampai datanya siap.
 async function PosDataLoader({
   currentView,
 }: {
   currentView: string | undefined;
 }) {
-  // Simulasi delay biar kelihatan skeletonnya (Hapus baris ini nanti kalau mau production)
-  // await new Promise((resolve) => setTimeout(resolve, 2000));
+  // 1. Fetching Data secara PARALEL di sini
+  const [productsResult, historyResult] = await Promise.all([
+    getProducts(),
+    getTransactionHistory(),
+  ]);
 
-  const { data: products } = await getProducts();
+  // 2. Olah Datanya
+  const products = productsResult.success ? productsResult.data : [];
+  const history = historyResult.success ? historyResult.data : [];
 
+  // 3. Render View Utama setelah data siap
   return (
-    <SmartPosMainView products={products || []} currentView={currentView} />
+    <SmartPosMainView
+      products={products}
+      currentView={currentView}
+      transactionHistory={history}
+    />
   );
 }
 
+// --- HALAMAN UTAMA (PARENT) ---
+// Halaman ini langsung muncul INSTANT (menampilkan Skeleton),
+// sambil menunggu PosDataLoader selesai mengambil data.
 export default async function PosPage({ searchParams }: Props) {
-  // 1. Fetch Data di Server (Action tetap berjalan di server)
-
-  // 2. Ambil parameter URL
   const params = await searchParams;
   const currentView = typeof params.view === 'string' ? params.view : undefined;
 
-  // 3. Render View Component
   return (
     <main>
-      {/* 4. SUSPENSE BOUNDARY */}
-      {/* Artinya: "Tampilkan <SmartPosSkeleton> SELAMA <PosDataLoader> sedang mengambil data" */}
+      {/* Boundary Suspense */}
       <Suspense fallback={<SmartPosSkeleton />}>
+        {/* Panggil Loader Component di sini */}
         <PosDataLoader currentView={currentView} />
       </Suspense>
     </main>
