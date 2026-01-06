@@ -1,73 +1,99 @@
 'use client';
 
-import { useState, useMemo, useTransition, useEffect } from 'react';
-import { Product, CartItem } from '@/types';
+import { useState, useMemo, useTransition, useEffect, useRef } from 'react';
+import { Product, CartItem } from '@/types'; // Pastikan path types benar
 import { formatRupiah, cn } from '@/lib/utils';
-import { Trash2, Plus, Minus, Search, Loader2 } from 'lucide-react';
+import {
+  Trash2,
+  Plus,
+  Minus,
+  Search,
+  Loader2,
+  ShoppingCart,
+  PackageOpen,
+} from 'lucide-react';
 import { processCheckout } from '@/features/smart-pos/_actions/transaction';
 import { toast } from 'sonner';
+import gsap from 'gsap';
+import { useGSAP } from '@gsap/react';
 
 interface POSInterfaceProps {
   initialProducts: Product[];
 }
 
 export default function POSInterface({ initialProducts }: POSInterfaceProps) {
+  // State
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isPending, startTransition] = useTransition();
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // --- 1. LOGIC LOAD (FIX: Pakai setTimeout untuk hindari Cascading Render Error) ---
+  // Refs untuk animasi
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // --- 1. PERFORMANCE OPTIMIZATION (useMemo) ---
+  // Filter produk dibungkus useMemo agar tidak render ulang saat ngetik cart
+  const filteredProducts = useMemo(() => {
+    return initialProducts.filter(
+      (p) =>
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (p.sku && p.sku.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+  }, [initialProducts, searchQuery]);
+
+  // --- 2. GSAP ANIMATION ---
+  // Animasi saat hasil pencarian berubah (Grid produk muncul smooth)
+  useGSAP(
+    () => {
+      if (filteredProducts.length > 0) {
+        gsap.fromTo(
+          '.product-card',
+          { y: 20, opacity: 0 },
+          { y: 0, opacity: 1, duration: 0.3, stagger: 0.05, ease: 'power2.out' }
+        );
+      }
+    },
+    { dependencies: [filteredProducts], scope: containerRef }
+  );
+
+  // --- 3. STORAGE LOGIC (Tetap pertahankan logic kamu yg sudah benar) ---
   useEffect(() => {
-    // Kita wrap dalam setTimeout agar update state terjadi di siklus render berikutnya
-    // Ini menghilangkan garis merah "Calling setState synchronously..."
     const timer = setTimeout(() => {
       if (typeof window !== 'undefined') {
         const savedCart = localStorage.getItem('nexpos-cart');
         if (savedCart) {
           try {
-            const parsedCart = JSON.parse(savedCart);
-            setCart(parsedCart);
+            setCart(JSON.parse(savedCart));
           } catch (error) {
             console.error('Gagal load cart:', error);
             localStorage.removeItem('nexpos-cart');
           }
         }
-        setIsInitialized(true); // Tandai selesai loading
+        setIsInitialized(true);
       }
     }, 0);
-
-    return () => clearTimeout(timer); // Cleanup timer jika component unmount
+    return () => clearTimeout(timer);
   }, []);
 
-  // --- 2. LOGIC SAVE ---
   useEffect(() => {
-    // Hanya simpan jika sudah initialized agar tidak menimpa data dengan array kosong
     if (isInitialized) {
       localStorage.setItem('nexpos-cart', JSON.stringify(cart));
     }
   }, [cart, isInitialized]);
 
-  // --- Logic Filter Produk ---
-  const filteredProducts = initialProducts.filter(
-    (p) =>
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.sku?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  // --- Logic Cart Operation ---
+  // --- 4. CART LOGIC ---
   const addToCart = (product: Product) => {
     setCart((prev) => {
       const existing = prev.find((item) => item.id === product.id);
       if (existing) {
-        toast.info(`Jumlah ${product.name} ditambah`);
+        toast.info(`+1 ${product.name}`);
         return prev.map((item) =>
           item.id === product.id
             ? { ...item, quantity: item.quantity + 1 }
             : item
         );
       }
-      toast.success(`${product.name} masuk keranjang`);
+      toast.success(`${product.name} ditambahkan`);
       return [...prev, { ...product, quantity: 1 }];
     });
   };
@@ -87,7 +113,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
 
   const removeFromCart = (productId: number) => {
     setCart((prev) => prev.filter((item) => item.id !== productId));
-    toast.error('Item dihapus dari keranjang');
   };
 
   const clearCart = () => {
@@ -99,88 +124,107 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     return cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
   }, [cart]);
 
-  // --- FUNGSI HANDLE CHECKOUT ---
   const handleCheckout = () => {
     if (cart.length === 0) return;
-
     startTransition(async () => {
       const result = await processCheckout(cart);
-
       if (result.success) {
-        toast.success('Transaksi Berhasil!', {
-          description: result.message,
-          duration: 4000,
-        });
+        toast.success('Transaksi Berhasil!', { description: result.message });
         setCart([]);
       } else {
-        toast.error('Transaksi Gagal', {
-          description: result.message,
-        });
+        toast.error('Gagal', { description: result.message });
       }
     });
   };
 
-  // UI Render (Loading State)
+  // UI Loading Awal
   if (!isInitialized) {
     return (
-      <div className="flex h-[calc(100vh-10rem)] items-center justify-center">
-        <Loader2 className="animate-spin text-blue-600" size={32} />
+      <div className="flex h-full items-center justify-center text-[#dfff4f]">
+        <Loader2 className="animate-spin" size={40} />
       </div>
     );
   }
 
-  // UI Utama
   return (
-    <div className="flex h-[calc(100vh-10rem)] gap-4 p-4 bg-gray-50">
-      {/* BAGIAN KIRI: DAFTAR PRODUK */}
-      <div className="flex-1 flex flex-col gap-4 overflow-hidden">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+    // Gunakan h-full agar mengisi sisa ruang dari parent
+    <div ref={containerRef} className="flex flex-col lg:flex-row h-full gap-6">
+      {/* --- BAGIAN KIRI: DAFTAR PRODUK (70% width) --- */}
+      <div className="flex-1 flex flex-col gap-6 overflow-hidden">
+        {/* Search Bar (Modern Glass) */}
+        <div className="relative group">
+          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+            <Search
+              className="text-gray-500 group-focus-within:text-[#dfff4f] transition-colors"
+              size={20}
+            />
+          </div>
           <input
             type="text"
-            placeholder="Cari produk atau SKU..."
-            className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Cari nama produk atau scan SKU..."
+            className="w-full pl-12 pr-4 py-3 bg-[#18191e] border border-white/10 rounded-2xl text-white placeholder:text-gray-600 focus:outline-none focus:border-[#dfff4f]/50 focus:ring-1 focus:ring-[#dfff4f]/50 transition-all shadow-lg"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            autoFocus
           />
         </div>
 
-        <div className="flex-1 overflow-y-auto pr-2">
+        {/* Product Grid */}
+        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
           {filteredProducts.length === 0 ? (
-            <div className="text-center text-gray-500 mt-10">
-              Produk tidak ditemukan
+            <div className="flex flex-col items-center justify-center h-64 text-gray-600 gap-4">
+              <PackageOpen size={64} strokeWidth={1} />
+              <p>Produk tidak ditemukan</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 pb-20">
               {filteredProducts.map((product) => (
                 <div
                   key={product.id}
-                  onClick={() => addToCart(product)}
+                  onClick={() => product.stock > 0 && addToCart(product)}
                   className={cn(
-                    'bg-white p-4 rounded-xl border border-gray-100 shadow-sm cursor-pointer hover:shadow-md hover:border-blue-300 transition-all active:scale-95 flex flex-col justify-between h-full',
+                    'product-card group relative bg-[#18191e] border border-white/5 rounded-2xl p-4 cursor-pointer transition-all duration-300 hover:border-[#dfff4f]/30 hover:shadow-[0_0_20px_rgba(223,255,79,0.05)] hover:-translate-y-1',
                     product.stock <= 0 &&
                       'opacity-50 pointer-events-none grayscale'
                   )}
                 >
-                  <div>
-                    <h3 className="font-semibold text-gray-800 line-clamp-2">
-                      {product.name}
-                    </h3>
-                    <p className="text-xs text-gray-500 mt-1">{product.sku}</p>
-                  </div>
-                  <div className="mt-3 flex justify-between items-end">
-                    <span className="font-bold text-blue-600">
-                      {formatRupiah(product.price)}
-                    </span>
+                  {/* Stok Badge */}
+                  <div className="absolute top-3 right-3">
                     <span
-                      className={`text-xs px-2 py-1 rounded ${
+                      className={cn(
+                        'text-[10px] px-2 py-0.5 rounded-full font-bold',
                         product.stock < 10
-                          ? 'bg-red-100 text-red-600'
-                          : 'bg-gray-100 text-gray-600'
-                      }`}
+                          ? 'bg-red-500/10 text-red-500'
+                          : 'bg-white/5 text-gray-400'
+                      )}
                     >
-                      Stok: {product.stock}
+                      Stock: {product.stock}
                     </span>
+                  </div>
+
+                  {/* Icon/Image Placeholder */}
+                  <div className="h-24 w-full bg-white/5 rounded-xl mb-4 flex items-center justify-center group-hover:bg-white/10 transition-colors">
+                    {/* Nanti bisa diganti <Image> */}
+                    <span className="text-2xl font-bold text-white/20 group-hover:text-[#dfff4f]/50 transition-colors">
+                      {product.name.charAt(0)}
+                    </span>
+                  </div>
+
+                  {/* Info */}
+                  <h3 className="font-medium text-gray-200 line-clamp-1 group-hover:text-[#dfff4f] transition-colors">
+                    {product.name}
+                  </h3>
+                  <p className="text-xs text-gray-500 mb-2 font-mono">
+                    {product.sku || 'NO-SKU'}
+                  </p>
+
+                  <div className="flex items-center justify-between">
+                    <p className="font-bold text-white">
+                      {formatRupiah(product.price)}
+                    </p>
+                    <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-[#dfff4f] opacity-0 group-hover:opacity-100 transition-all scale-50 group-hover:scale-100">
+                      <Plus size={16} />
+                    </div>
                   </div>
                 </div>
               ))}
@@ -189,87 +233,111 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
         </div>
       </div>
 
-      {/* BAGIAN KANAN: KERANJANG */}
-      <div className="w-[400px] bg-white rounded-2xl shadow-lg border border-gray-100 flex flex-col overflow-hidden sticky top-4 h-full">
-        <div className="p-4 border-b border-gray-100 bg-white">
-          <h2 className="font-bold text-lg">Keranjang Belanja</h2>
-          <p className="text-sm text-gray-500">{cart.length} item dipilih</p>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {cart.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400 space-y-2">
-              <span className="text-4xl">🛒</span>
-              <p>Keranjang kosong</p>
+      {/* --- BAGIAN KANAN: KERANJANG (30% width / Fixed Sidebar) --- */}
+      <div className="w-full lg:w-[400px] flex flex-col h-[calc(100vh-140px)] sticky top-4">
+        <div className="bg-[#18191e] border border-white/5 rounded-3xl shadow-2xl flex flex-col h-full overflow-hidden">
+          {/* Header Keranjang */}
+          <div className="p-5 border-b border-white/5 bg-[#18191e] flex justify-between items-center z-10">
+            <div className="flex items-center gap-2">
+              <ShoppingCart className="text-[#dfff4f]" size={20} />
+              <h2 className="font-bold text-white">Current Order</h2>
             </div>
-          ) : (
-            cart.map((item) => (
-              <div
-                key={item.id}
-                className="flex justify-between items-center group"
-              >
-                <div className="flex-1">
-                  <p className="font-medium text-sm text-gray-800 line-clamp-1">
-                    {item.name}
-                  </p>
-                  <p className="text-blue-600 text-xs font-bold">
-                    {formatRupiah(item.price)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3 bg-gray-50 rounded-lg p-1 ml-2">
-                  <button
-                    onClick={() => updateQuantity(item.id, -1)}
-                    className="p-1 hover:bg-white rounded shadow-sm text-gray-600"
-                  >
-                    <Minus size={14} />
-                  </button>
-                  <span className="text-sm font-semibold w-4 text-center">
-                    {item.quantity}
-                  </span>
-                  <button
-                    onClick={() => updateQuantity(item.id, 1)}
-                    className="p-1 hover:bg-white rounded shadow-sm text-gray-600"
-                  >
-                    <Plus size={14} />
-                  </button>
-                </div>
-                <button
-                  onClick={() => removeFromCart(item.id)}
-                  className="ml-3 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-
-        <div className="p-4 bg-gray-50 border-t border-gray-100 space-y-3 mt-auto">
-          <div className="flex justify-between items-center">
-            <span className="text-gray-600">Subtotal</span>
-            <span className="font-bold text-lg">{formatRupiah(subtotal)}</span>
+            <span className="bg-white/10 text-xs px-2 py-1 rounded-md text-gray-300">
+              {cart.length} Items
+            </span>
           </div>
-          <div className="grid grid-cols-4 gap-2">
-            <button
-              onClick={clearCart}
-              disabled={cart.length === 0 || isPending}
-              className="col-span-1 border border-red-200 text-red-600 hover:bg-red-50 rounded-lg py-3 font-medium text-sm disabled:opacity-50"
-            >
-              Batal
-            </button>
-            <button
-              onClick={handleCheckout}
-              disabled={cart.length === 0 || isPending}
-              className="col-span-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-3 font-bold shadow-lg shadow-blue-200 transition-all disabled:opacity-50 flex justify-center items-center gap-2"
-            >
-              {isPending ? (
-                <>
-                  <Loader2 className="animate-spin" size={20} /> Memproses...
-                </>
-              ) : (
-                'Bayar Sekarang'
-              )}
-            </button>
+
+          {/* List Item */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+            {cart.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-gray-600 gap-3 opacity-50">
+                <ShoppingCart size={48} strokeWidth={1} />
+                <p className="text-sm">Keranjang kosong</p>
+              </div>
+            ) : (
+              cart.map((item) => (
+                <div
+                  key={item.id}
+                  className="group flex gap-3 bg-white/5 hover:bg-white/[0.07] p-3 rounded-2xl transition-all border border-transparent hover:border-white/10"
+                >
+                  {/* Item Info */}
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-white line-clamp-1">
+                      {item.name}
+                    </p>
+                    <p className="text-xs text-[#dfff4f] font-mono mt-1">
+                      {formatRupiah(item.price)}
+                    </p>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-3 bg-black/20 rounded-xl px-2 py-1 h-fit self-center">
+                    <button
+                      onClick={() => updateQuantity(item.id, -1)}
+                      className="text-gray-400 hover:text-white transition-colors"
+                    >
+                      <Minus size={14} />
+                    </button>
+                    <span className="text-sm font-bold w-4 text-center text-white">
+                      {item.quantity}
+                    </span>
+                    <button
+                      onClick={() => updateQuantity(item.id, 1)}
+                      className="text-gray-400 hover:text-white transition-colors"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => removeFromCart(item.id)}
+                    className="text-gray-600 hover:text-red-500 transition-colors p-1"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Footer Summary & Checkout */}
+          <div className="p-5 bg-[#121317] border-t border-white/5 space-y-4">
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm text-gray-400">
+                <span>Subtotal</span>
+                <span>{formatRupiah(subtotal)}</span>
+              </div>
+              <div className="flex justify-between text-sm text-gray-400">
+                <span>Tax (0%)</span>
+                <span>Rp 0</span>
+              </div>
+              <div className="flex justify-between text-lg font-bold text-white pt-2 border-t border-white/5">
+                <span>Total</span>
+                <span className="text-[#dfff4f]">{formatRupiah(subtotal)}</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-3 pt-2">
+              <button
+                onClick={clearCart}
+                disabled={cart.length === 0 || isPending}
+                className="col-span-1 flex items-center justify-center rounded-xl border border-white/10 text-gray-400 hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/20 transition-all disabled:opacity-30"
+              >
+                <Trash2 size={18} />
+              </button>
+
+              <button
+                onClick={handleCheckout}
+                disabled={cart.length === 0 || isPending}
+                className="col-span-3 bg-[#dfff4f] hover:bg-[#ccee3d] text-black font-bold py-3.5 rounded-xl transition-all shadow-[0_0_20px_rgba(223,255,79,0.1)] hover:shadow-[0_0_30px_rgba(223,255,79,0.3)] disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2"
+              >
+                {isPending ? (
+                  <Loader2 className="animate-spin" size={20} />
+                ) : (
+                  'Bayar Sekarang'
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>

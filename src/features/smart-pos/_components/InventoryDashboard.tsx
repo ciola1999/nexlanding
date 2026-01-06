@@ -1,12 +1,15 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
+import { Package, AlertTriangle, Search, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
-import ProductTable, { Product } from './product-table'; // Sesuaikan path import
-import SeedButton from './seed-button'; // Sesuaikan path import
-import ResetButton from './reset-button'; // Sesuaikan path import
+
+// IMPORT KOMPONEN MODULAR KITA
+import ProductTable, { Product } from './product-table';
+import SeedButton from './seed-button';
+import ResetButton from './reset-button';
 
 interface InventoryDashboardProps {
   products: Product[];
@@ -20,27 +23,27 @@ export default function InventoryDashboard({
   lowStockCount,
 }: InventoryDashboardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // 🔥 SETUP GSAP ANIMATION
+  // --- LOGIC: Filter Produk (Search Client-Side) ---
+  const filteredProducts = products.filter(
+    (p) =>
+      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.sku && p.sku.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
+  // --- ANIMASI GSAP (Tetap Sama) ---
   useGSAP(
     () => {
       const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
 
-      // 1. Stagger Card Entrance (Blur + Slide Up)
       tl.fromTo(
         '.stat-card',
-        { y: 50, opacity: 0, filter: 'blur(10px)' },
-        {
-          y: 0,
-          opacity: 1,
-          filter: 'blur(0px)',
-          duration: 0.8,
-          stagger: 0.15,
-        }
+        { y: 30, opacity: 0, filter: 'blur(5px)' },
+        { y: 0, opacity: 1, filter: 'blur(0px)', duration: 0.6, stagger: 0.1 }
       );
 
-      // 2. Animate Numbers (Counter Effect)
-      // Kita animate object dummy val: 0 -> target
+      // Animasi Angka
       const targets = [
         { el: '#count-total', val: totalProducts },
         { el: '#count-low', val: lowStockCount },
@@ -59,100 +62,114 @@ export default function InventoryDashboard({
         });
       });
 
-      // 3. Table Entrance (Delay sedikit biar elegan)
       tl.fromTo(
-        '.inventory-section',
+        '.inventory-content',
         { opacity: 0, y: 20 },
-        { opacity: 1, y: 0, duration: 0.6 },
-        '-=0.4'
+        { opacity: 1, y: 0, duration: 0.5 },
+        '-=0.3'
       );
     },
-    { scope: containerRef }
+    { scope: containerRef, dependencies: [totalProducts, lowStockCount] }
   );
 
   return (
-    <div ref={containerRef} className="w-full">
-      {/* STATS GRID */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        {/* Card 1: Total Products */}
-        <div className="stat-card p-6 bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-300">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
-              Total Produk
-            </h2>
-            <span className="text-indigo-600 bg-indigo-50 p-2 rounded-lg text-lg">
-              📦
-            </span>
+    <div ref={containerRef} className="w-full space-y-8 pb-10">
+      {/* --- SECTION 1: STATS CARDS --- */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Card 1 */}
+        <div className="stat-card bg-[#18191e] border border-white/5 p-6 rounded-2xl relative overflow-hidden group hover:border-[#dfff4f]/30 transition-all shadow-lg">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+            <Package size={80} className="text-white" />
           </div>
-          {/* ID digunakan untuk GSAP Counter Selector */}
+          <h3 className="text-gray-400 text-sm font-medium uppercase tracking-wider">
+            Total Produk
+          </h3>
           <p
             id="count-total"
-            className="text-4xl font-bold text-gray-900 font-mono tracking-tighter"
+            className="text-4xl font-bold text-white mt-2 font-mono tracking-tighter"
           >
             0
           </p>
-          <p className="text-xs text-gray-400 mt-1">
+          <div className="mt-4 text-xs text-gray-500">
             Item terdaftar di database
-          </p>
+          </div>
         </div>
 
-        {/* Card 2: Low Stock */}
-        <div className="stat-card p-6 bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-300">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
-              Perlu Restock
-            </h2>
-            <span className="text-orange-600 bg-orange-50 p-2 rounded-lg text-lg">
-              ⚠️
-            </span>
+        {/* Card 2 */}
+        <div className="stat-card bg-[#18191e] border border-white/5 p-6 rounded-2xl relative overflow-hidden group hover:border-red-500/30 transition-all shadow-lg">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 text-red-500 transition-opacity">
+            <AlertTriangle size={80} />
           </div>
+          <h3 className="text-gray-400 text-sm font-medium uppercase tracking-wider">
+            Perlu Restock
+          </h3>
           <p
             id="count-low"
-            className={`text-4xl font-bold font-mono tracking-tighter ${
-              lowStockCount > 0 ? 'text-red-600' : 'text-emerald-600'
+            className={`text-4xl font-bold mt-2 font-mono tracking-tighter ${
+              lowStockCount > 0 ? 'text-red-500' : 'text-[#dfff4f]'
             }`}
           >
             0
           </p>
-          <p className="text-xs text-gray-400 mt-1">
+          <div className="mt-4 text-xs text-gray-500">
             Produk dengan stok &lt; 20
-          </p>
+          </div>
         </div>
 
-        {/* Card 3: Actions */}
-        <div className="stat-card p-6 bg-gradient-to-br from-white to-gray-50 rounded-xl shadow-sm border border-gray-200 flex flex-col justify-center">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">
-            Database Action
-          </h2>
-          <div className="flex flex-col gap-2">
+        {/* Card 3: Actions (Menggunakan Komponen Terpisah) */}
+        <div className="stat-card bg-[#18191e] border border-white/5 p-6 rounded-2xl flex flex-col justify-between shadow-lg">
+          <h3 className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-3">
+            Database Actions
+          </h3>
+          <div className="flex flex-row gap-3 h-full items-end">
             <SeedButton />
             <ResetButton />
           </div>
         </div>
       </div>
 
-      {/* TABLE SECTION */}
-      <div className="inventory-section mt-8">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-gray-800 tracking-tight">
+      {/* --- SECTION 2: HEADER & SEARCH --- */}
+      <div className="inventory-content flex flex-col md:flex-row md:items-center justify-between gap-4 mt-8">
+        <div>
+          <h2 className="text-2xl font-bold text-white tracking-tight">
             Inventory Produk
           </h2>
+          <p className="text-gray-500 text-sm mt-1">
+            Kelola stok dan harga produk Anda.
+          </p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
-          <ProductTable data={products || []} />
+
+        <div className="relative w-full md:w-72 group">
+          <Search
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-[#dfff4f] transition-colors"
+            size={18}
+          />
+          <input
+            type="text"
+            placeholder="Cari nama / SKU..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-[#18191e] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#dfff4f]/50 focus:ring-1 focus:ring-[#dfff4f]/50 transition-all placeholder:text-gray-600 shadow-inner"
+          />
         </div>
       </div>
 
-      {/* FOOTER LINK */}
-      <div className="inventory-section mt-12 pt-6 border-t border-gray-200">
+      {/* --- SECTION 3: TABLE (Menggunakan Komponen Terpisah) --- */}
+      <div className="inventory-content">
+        <ProductTable data={filteredProducts} />
+      </div>
+
+      {/* Footer */}
+      <div className="inventory-content pt-6 border-t border-white/5">
         <Link
           href="/"
-          className="inline-flex items-center text-sm text-gray-500 hover:text-indigo-600 transition-colors font-medium group"
+          className="inline-flex items-center text-sm text-gray-500 hover:text-[#dfff4f] transition-colors font-medium group"
         >
-          <span className="group-hover:-translate-x-1 transition-transform duration-200">
-            &larr;
-          </span>
-          <span className="ml-2">Kembali ke Halaman Portfolio</span>
+          <ArrowLeft
+            size={16}
+            className="mr-2 group-hover:-translate-x-1 transition-transform"
+          />
+          Kembali ke Halaman Portfolio
         </Link>
       </div>
     </div>

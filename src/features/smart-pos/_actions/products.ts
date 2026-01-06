@@ -1,7 +1,7 @@
 'use server';
 
 import { db } from '@/db';
-import { products } from '@/features/smart-pos/db/schema';
+import { products, orderItems, orders } from '@/features/smart-pos/db/schema';
 import { desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
@@ -63,15 +63,31 @@ export async function seedDummyProducts() {
 }
 
 // 2. ACTION: Hapus Semua Data (Reset)
+// ACTION: Hapus Semua Data (Reset Total)
 export async function deleteAllProducts() {
   try {
+    // LANGKAH 1: Hapus detail item transaksi dulu (Anak)
+    // Karena tabel ini yang "mengikat" produk
+    await db.delete(orderItems);
+
+    // LANGKAH 2: (Opsional) Hapus riwayat ordernya juga biar bersih total
+    await db.delete(orders);
+
+    // LANGKAH 3: Sekarang aman untuk menghapus Produk (Induk)
     await db.delete(products);
 
     revalidatePath('/projects/smart-pos');
-    return { success: true, message: 'Semua data berhasil dihapus!' };
+    return { success: true, message: 'Database berhasil di-reset total!' };
   } catch (error) {
     console.error('Delete Error:', error);
-    return { success: false, message: 'Gagal menghapus data.' };
+    // Kita return pesan error aslinya agar bisa dilihat di toast
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : 'Gagal menghapus data karena relasi database.',
+    };
   }
 }
 

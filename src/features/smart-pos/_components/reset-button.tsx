@@ -1,20 +1,38 @@
 'use client';
 
 import { useTransition } from 'react';
+import { useRouter } from 'next/navigation'; // TAMBAHAN PENTING
 import { deleteAllProducts } from '@/features/smart-pos/_actions/products';
+import { Trash2, Loader2 } from 'lucide-react';
+import { toast } from 'sonner'; // TAMBAHAN UTK NOTIFIKASI
 
 export default function ResetButton() {
   const [isPending, startTransition] = useTransition();
+  const router = useRouter(); // Hook untuk refresh halaman
 
   const handleReset = () => {
-    // Wajib konfirmasi agar tidak terhapus tidak sengaja
+    // 1. Konfirmasi
     if (
       !confirm('PERINGATAN: Ini akan menghapus SEMUA data produk. Lanjutkan?')
-    )
+    ) {
       return;
+    }
 
     startTransition(async () => {
-      await deleteAllProducts();
+      try {
+        const result = await deleteAllProducts();
+
+        if (!result.success) {
+          // Ini akan memunculkan pesan error dari database ke layar
+          toast.error(result.message);
+        } else {
+          toast.success(result.message);
+          router.refresh();
+        }
+      } catch (error) {
+        console.error(error);
+        toast.error('Terjadi kesalahan sistem.');
+      }
     });
   };
 
@@ -22,9 +40,15 @@ export default function ResetButton() {
     <button
       onClick={handleReset}
       disabled={isPending}
-      className="px-4 py-2 rounded-lg text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 transition-colors disabled:opacity-50"
+      className="w-full md:w-auto px-6 py-3 rounded-xl text-sm font-bold text-red-500 bg-white/5 hover:bg-red-500/10 border border-white/10 hover:border-red-500/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
     >
-      {isPending ? 'Menghapus...' : '🗑️ Reset Database'}
+      {isPending ? (
+        <Loader2 className="animate-spin" size={18} />
+      ) : (
+        <>
+          <Trash2 size={18} /> Reset DB
+        </>
+      )}
     </button>
   );
 }
