@@ -1,9 +1,13 @@
+// src/app/projects/smart-pos/page.tsx
 import { Metadata } from 'next';
 import { Suspense } from 'react';
+import { redirect } from 'next/navigation';
 
-// Actions & Components
-import { getProducts } from '@/features/smart-pos/_actions/products'; // Cek path action kamu
+// Actions & Utils
+import { getProducts } from '@/features/smart-pos/_actions/products';
 import { getTransactionHistory } from '@/features/smart-pos/_actions/get-history';
+import { getSession } from '@/lib/auth'; // 👇 Import session checker
+
 import SmartPosMainView from '@/features/smart-pos/_components/main-view';
 import SmartPosSkeleton from '@/features/smart-pos/_components/Skeleton';
 
@@ -12,31 +16,26 @@ export const metadata: Metadata = {
   description: 'Aplikasi Smart POS terintegrasi',
 };
 
-// Pastikan selalu fresh data
 export const dynamic = 'force-dynamic';
 
 type Props = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 };
 
-// --- KOMPONEN PENGAMBIL DATA (SERVER COMPONENT) ---
-// Komponen ini akan "ditahan" oleh Suspense sampai datanya siap.
+// --- KOMPONEN PENGAMBIL DATA ---
 async function PosDataLoader({
   currentView,
 }: {
   currentView: string | undefined;
 }) {
-  // 1. Fetching Data secara PARALEL di sini
   const [productsResult, historyResult] = await Promise.all([
     getProducts(),
     getTransactionHistory(),
   ]);
 
-  // 2. Olah Datanya
   const products = productsResult.success ? productsResult.data : [];
   const history = historyResult.success ? historyResult.data : [];
 
-  // 3. Render View Utama setelah data siap
   return (
     <SmartPosMainView
       products={products}
@@ -46,18 +45,30 @@ async function PosDataLoader({
   );
 }
 
-// --- HALAMAN UTAMA (PARENT) ---
-// Halaman ini langsung muncul INSTANT (menampilkan Skeleton),
-// sambil menunggu PosDataLoader selesai mengambil data.
+// --- HALAMAN UTAMA ---
 export default async function PosPage({ searchParams }: Props) {
+  // 🔒 1. CEK AUTENTIKASI DI SINI
+  const session = await getSession();
+
+  // Jika tidak ada session, tendang ke halaman login
+  if (!session) {
+    redirect('/projects/smart-pos/login');
+  }
+
   const params = await searchParams;
   const currentView = typeof params.view === 'string' ? params.view : undefined;
 
+  // Jika Role = 'cashier' tapi mencoba akses halaman Admin (Inventory/History),
+  // paksa balik ke view 'cashier' (OPSIONAL - Rules Protection)
+  /*
+  if (session.role === 'cashier' && (currentView === 'inventory' || currentView === 'history')) {
+     // Bisa redirect atau biarkan saja tapi hide tombol di UI
+  }
+  */
+
   return (
     <main>
-      {/* Boundary Suspense */}
       <Suspense fallback={<SmartPosSkeleton />}>
-        {/* Panggil Loader Component di sini */}
         <PosDataLoader currentView={currentView} />
       </Suspense>
     </main>

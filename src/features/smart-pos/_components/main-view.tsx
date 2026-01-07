@@ -19,6 +19,7 @@ import POSInterface from './pos-interface';
 import InventoryDashboard from './InventoryDashboard';
 import DashboardAnalytics from './DashboardAnalytics';
 import HistoryList from './HistoryList';
+import LogoutButton from '@/features/smart-pos/_components/logout-button'; // Sesuaikan path
 
 // 👇 Import schema database (Pastikan path ini benar sesuai struktur projectmu)
 import { Product, Order, OrderItem } from '../db/schema';
@@ -160,7 +161,6 @@ export default function SmartPosMainView({
               </span>
             </div>
           </div>
-
           <div className="flex bg-black/20 p-1 rounded-xl border border-white/5">
             <NavButton
               href="/projects/smart-pos?view=dashboard"
@@ -188,6 +188,10 @@ export default function SmartPosMainView({
               label="Kasir"
               special
             />
+            <div className="w-px h-5 bg-white/10 mx-2 self-center" />
+            <div>
+              <LogoutButton /> {/* 👈 Pasang di sini */}
+            </div>
           </div>
 
           <div className="pr-2">

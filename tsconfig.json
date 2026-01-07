@@ -29,7 +29,9 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts",
-    "src/features/smart-pos/_components/main-view.tss"
+    "src/features/smart-pos/_components/main-view.tsx",
+    "src",
+    "scripts/seed-user.ts"
   ],
   "exclude": ["node_modules"]
 }

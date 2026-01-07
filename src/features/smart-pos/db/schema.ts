@@ -5,60 +5,86 @@ import {
   integer,
   timestamp,
   boolean,
+  pgEnum,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
+
+// --- BAGIAN BARU: AUTHENTICATION ---
+
+// 1. Role Enum: Memastikan role hanya bisa diisi 'admin' atau 'cashier'
+// Postgres akan menjaga integritas data ini level database.
+export const roleEnum = pgEnum('role', ['admin', 'cashier']);
+
+// 2. Tabel Users
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  // Username unik, login kasir lebih cepat ketik username dibanding email
+  username: text('username').unique().notNull(),
+  password: text('password').notNull(), // Akan di-hash (Argon2)
+  role: roleEnum('role').default('cashier').notNull(),
+  avatarUrl: text('avatar_url'),
+  isActive: boolean('is_active').default(true), // Bisa non-aktifkan kasir tanpa hapus data
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at')
+    .defaultNow()
+    .notNull()
+    .$onUpdate(() => new Date()),
+});
+
+// --- BAGIAN LAMA (DENGAN SEDIKIT UPDATE) ---
 
 // Definisi Tabel Products
 export const products = pgTable('products', {
   id: serial('id').primaryKey(),
-
-  // Informasi Dasar
   name: text('name').notNull(),
   description: text('description'),
-
-  // Harga disimpan dalam integer (Rupiah penuh) untuk menghindari masalah floating point
-  // Contoh: Rp 15.000 disimpan sebagai 15000
   price: integer('price').notNull().default(0),
-
-  // Manajemen Stok
   stock: integer('stock').notNull().default(0),
-  sku: text('sku').unique(), // Kode unik untuk barcode scanner nanti
-
-  // Metadata
+  sku: text('sku').unique(),
   isActive: boolean('is_active').default(true),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });
 
-// Tipe data untuk TypeScript (Inferensi otomatis)
-// Ini akan sangat berguna saat kita memakai data ini di Component UI
-export type Product = typeof products.$inferSelect;
-export type NewProduct = typeof products.$inferInsert;
-
-// 1. TABEL TRANSAKSI (HEAD)
+// Tabel Transaksi (Head)
 export const orders = pgTable('orders', {
   id: serial('id').primaryKey(),
-  totalAmount: integer('total_amount').notNull(), // Total belanja
-  paymentMethod: text('payment_method').default('CASH').notNull(), // CASH / QRIS
+  totalAmount: integer('total_amount').notNull(),
+  paymentMethod: text('payment_method').default('CASH').notNull(),
+
+  // UPDATE PENTING: Menghubungkan transaksi dengan kasir yang bertugas
+  cashierId: integer('cashier_id').references(() => users.id),
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
-// 2. TABEL ITEM TRANSAKSI (DETAIL)
+// Tabel Item Transaksi (Detail)
 export const orderItems = pgTable('order_items', {
   id: serial('id').primaryKey(),
   orderId: integer('order_id')
     .references(() => orders.id)
-    .notNull(), // Link ke tabel orders
+    .notNull(),
   productId: integer('product_id')
     .references(() => products.id)
-    .notNull(), // Link ke tabel products
+    .notNull(),
   quantity: integer('quantity').notNull(),
-  priceAtTime: integer('price_at_time').notNull(), // Harga saat dibeli (penting jika harga produk berubah nanti)
+  priceAtTime: integer('price_at_time').notNull(),
 });
 
-// 3. RELASI (Untuk memudahkan query nanti)
-export const ordersRelations = relations(orders, ({ many }) => ({
+// --- RELASI (UPDATED) ---
+
+export const usersRelations = relations(users, ({ many }) => ({
+  orders: many(orders), // Satu user (kasir) bisa punya banyak transaksi
+}));
+
+export const ordersRelations = relations(orders, ({ many, one }) => ({
   items: many(orderItems),
+  cashier: one(users, {
+    // Relasi balik: Order milik satu kasir
+    fields: [orders.cashierId],
+    references: [users.id],
+  }),
 }));
 
 export const orderItemsRelations = relations(orderItems, ({ one }) => ({
@@ -72,10 +98,17 @@ export const orderItemsRelations = relations(orderItems, ({ one }) => ({
   }),
 }));
 
-// 1. Tipe Data Order (Head)
+// --- TIPE DATA EXPORT ---
+
+export type Product = typeof products.$inferSelect;
+export type NewProduct = typeof products.$inferInsert;
+
 export type Order = typeof orders.$inferSelect;
 export type NewOrder = typeof orders.$inferInsert;
 
-// 2. Tipe Data Order Item (Detail)
 export type OrderItem = typeof orderItems.$inferSelect;
 export type NewOrderItem = typeof orderItems.$inferInsert;
+
+// Tipe Data User
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
