@@ -15,6 +15,13 @@
       "when": 1767524392376,
       "tag": "0001_happy_ricochet",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1767827056304,
+      "tag": "0002_cooing_bulldozer",
+      "breakpoints": true
     }
   ]
 }

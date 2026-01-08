@@ -3,13 +3,14 @@
 import { useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import { useGSAP } from '@gsap/react';
-import { Package, AlertTriangle, Search, ArrowLeft } from 'lucide-react';
+import { Package, AlertTriangle, Search, ArrowLeft, Plus } from 'lucide-react';
 import Link from 'next/link';
 
 // IMPORT KOMPONEN MODULAR KITA
 import ProductTable, { Product } from './product-table';
 import SeedButton from './seed-button';
 import ResetButton from './reset-button';
+import ProductForm from './Product-Form'; // Import komponen baru
 
 interface InventoryDashboardProps {
   products: Product[];
@@ -25,7 +26,9 @@ export default function InventoryDashboard({
   const containerRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // --- LOGIC: Filter Produk (Search Client-Side) ---
+  // --- 2. STATE UNTUK BUKA/TUTUP FORM ---
+  const [isFormOpen, setIsFormOpen] = useState(false);
+
   const filteredProducts = products.filter(
     (p) =>
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -139,7 +142,7 @@ export default function InventoryDashboard({
           </p>
         </div>
 
-        <div className="relative w-full md:w-72 group">
+        <div className="flex gap-3 relative w-full md:w-72 group">
           <Search
             className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-[#dfff4f] transition-colors"
             size={18}
@@ -151,13 +154,25 @@ export default function InventoryDashboard({
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-[#18191e] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#dfff4f]/50 focus:ring-1 focus:ring-[#dfff4f]/50 transition-all placeholder:text-gray-600 shadow-inner"
           />
+
+          {/* TOMBOL BARU */}
+          <button
+            onClick={() => setIsFormOpen(true)}
+            className="bg-[#dfff4f] hover:bg-[#ccee2e] text-black px-4 py-2.5 rounded-xl text-sm font-bold transition flex items-center gap-2"
+          >
+            <Plus size={18} />
+            <span className="hidden md:inline">Tambah</span>
+          </button>
         </div>
       </div>
 
       {/* --- SECTION 3: TABLE (Menggunakan Komponen Terpisah) --- */}
-      <div className="inventory-content">
+      <div className="inventory-content mt-6">
         <ProductTable data={filteredProducts} />
       </div>
+
+      {/* --- 4. RENDER MODAL FORM DI SINI (PALING BAWAH) --- */}
+      {isFormOpen && <ProductForm onClose={() => setIsFormOpen(false)} />}
 
       {/* Footer */}
       <div className="inventory-content pt-6 border-t border-white/5">
@@ -171,6 +186,8 @@ export default function InventoryDashboard({
           />
           Kembali ke Halaman Portfolio
         </Link>
+
+        {isFormOpen && <ProductForm onClose={() => setIsFormOpen(false)} />}
       </div>
     </div>
   );

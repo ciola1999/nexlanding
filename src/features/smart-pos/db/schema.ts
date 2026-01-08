@@ -6,6 +6,7 @@ import {
   timestamp,
   boolean,
   pgEnum,
+  decimal,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
@@ -39,7 +40,16 @@ export const products = pgTable('products', {
   id: serial('id').primaryKey(),
   name: text('name').notNull(),
   description: text('description'),
+  // Existing: Harga Jual (Selling Price)
+  // Catatan: Anda pakai integer (Rp), itu oke untuk Rupiah.
   price: integer('price').notNull().default(0),
+
+  // BARU: Harga Pokok (Cost Price)
+  // Kita pakai DECIMAL agar presisi untuk perhitungan rata-rata (Average Costing)
+  // Contoh: Beli 1 lusin 20.000 -> 1 pcs = 1.666,66 (perlu koma)
+  costPrice: decimal('cost_price', { precision: 15, scale: 2 })
+    .notNull()
+    .default('0'),
   stock: integer('stock').notNull().default(0),
   sku: text('sku').unique(),
   isActive: boolean('is_active').default(true),
@@ -70,6 +80,12 @@ export const orderItems = pgTable('order_items', {
     .notNull(),
   quantity: integer('quantity').notNull(),
   priceAtTime: integer('price_at_time').notNull(),
+  // BARU: HPP saat transaksi terjadi (SNAPSHOT)
+  // Ini kunci untuk menghitung Realized Profit per transaksi
+  costPriceAtTime: decimal('cost_price_at_time', {
+    precision: 15,
+    scale: 2,
+  }).default('0'),
 });
 
 // --- RELASI (UPDATED) ---

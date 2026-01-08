@@ -4,6 +4,7 @@ import { db } from '@/db';
 import { products, orderItems, orders } from '@/features/smart-pos/db/schema';
 import { desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 
 // Helper: Bikin angka acak
 const randomInt = (min: number, max: number) =>
@@ -12,6 +13,14 @@ const randomInt = (min: number, max: number) =>
 // Helper: Pilih item acak dari array
 const randomChoice = <T>(arr: T[]): T =>
   arr[Math.floor(Math.random() * arr.length)];
+
+export type ActionState = {
+  success?: boolean;
+  message?: string;
+  errors?: {
+    [key: string]: string[];
+  };
+};
 
 // 1. ACTION: Tambah 1 Product Acak (Dynamic Seeding)
 export async function seedDummyProducts() {
@@ -98,5 +107,51 @@ export async function getProducts() {
     return { success: true, data };
   } catch (error) {
     return { success: false, data: [] };
+  }
+}
+
+// React 19 Signature: (prevState, formData)
+export async function createProduct(
+  prevState: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  // Simulasi delay biar loading kelihatan (hapus di production)
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  try {
+    const rawData = {
+      name: formData.get('name') as string,
+      sku: formData.get('sku') as string,
+      costPrice: formData.get('costPrice') as string,
+      price: formData.get('price') as string, // Ambil string dulu
+      stock: formData.get('stock') as string,
+      description: formData.get('description') as string,
+    };
+
+    // Validasi Manual (Bagusnya pakai Zod, tapi ini basic validation)
+    if (!rawData.name || !rawData.costPrice || !rawData.price) {
+      return {
+        success: false,
+        message: 'Gagal: Nama, HPP, dan Harga Jual wajib diisi.',
+      };
+    }
+
+    await db.insert(products).values({
+      name: rawData.name,
+      sku: rawData.sku,
+      costPrice: rawData.costPrice, // Decimal string
+      price: parseInt(rawData.price), // Integer (karena schema lama pakai Int)
+      stock: parseInt(rawData.stock || '0'),
+      description: rawData.description,
+      isActive: true,
+    });
+
+    revalidatePath('/projects/smart-pos');
+
+    // Return success state
+    return { success: true, message: 'Produk berhasil disimpan ke Database!' };
+  } catch (error) {
+    console.error('Create Product Error:', error);
+    return { success: false, message: 'Terjadi kesalahan server.' };
   }
 }
