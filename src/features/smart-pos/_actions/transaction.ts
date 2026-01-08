@@ -1,12 +1,22 @@
 'use server';
 
-import { db } from '@/db'; // Pastikan path import db benar
-import { orders, orderItems, products } from '@/features/smart-pos/db/schema';
+import { db } from '@/db';
+import {
+  orders,
+  orderItems,
+  products,
+  type Order,
+} from '@/features/smart-pos/db/schema';
 import { revalidatePath } from 'next/cache';
-import { eq, sql, and, gte, desc } from 'drizzle-orm';
+import { eq, sql, gte, desc } from 'drizzle-orm';
+
+// Definisi Tipe Return agar Frontend tidak menebak-nebak
+type CheckoutResult =
+  | { success: false; message: string; data?: never }
+  | { success: true; message: string; data: Order };
 
 type CheckoutItem = {
-  id: number; // Product ID
+  id: number;
   quantity: number;
   price: number;
 };
@@ -20,71 +30,58 @@ type CustomerData = {
 export async function processCheckout(
   items: CheckoutItem[],
   customer: CustomerData
-) {
+): Promise<CheckoutResult> {
+  // 1. Validasi Input
   if (!items.length) {
     return { success: false, message: 'Keranjang kosong' };
   }
-
-  // Validasi Meja (Wajib)
   if (!customer.tableNumber) {
     return { success: false, message: 'Nomor Meja/Kursi wajib diisi!' };
   }
 
   try {
-    // KITA PAKAI TRANSACTION BIAR DATA KONSISTEN
-    await db.transaction(async (tx) => {
-      // --- LOGIC 1: HITUNG QUEUE NUMBER (DAILY RESET) ---
-
-      // 1. Set jam 00:00:00 hari ini
+    // 2. Database Transaction
+    const newOrder = await db.transaction(async (tx) => {
+      // A. Hitung Queue Number (Reset Harian)
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
 
-      // 2. Cari order terakhir yang dibuat HARI INI
       const lastOrderToday = await tx.query.orders.findFirst({
         where: gte(orders.createdAt, startOfDay),
-        orderBy: [desc(orders.queueNumber)], // Urutkan dari nomor antrian terbesar
-        columns: { queueNumber: true }, // Kita cuma butuh nomornya
+        orderBy: [desc(orders.queueNumber)],
+        columns: { queueNumber: true },
       });
 
-      // 3. Jika belum ada order hari ini, mulai dari 1. Jika ada, tambah 1.
       const nextQueueNumber = (lastOrderToday?.queueNumber ?? 0) + 1;
 
-      // 1. Hitung Total
+      // B. Hitung Total
       const totalAmount = items.reduce(
         (sum, item) => sum + item.price * item.quantity,
         0
       );
 
-      // 2. Buat Order Baru
-      const [newOrder] = await tx
+      // C. Insert Order (Header)
+      const [insertedOrder] = await tx
         .insert(orders)
         .values({
-          totalAmount: totalAmount,
-          paymentMethod: 'CASH', // Default dulu
-
-          // Masukkan Data Baru
+          totalAmount,
+          paymentMethod: 'CASH',
           tableNumber: customer.tableNumber,
-          customerName: customer.customerName || 'Guest', // Default Guest jika kosong
+          customerName: customer.customerName || 'Guest',
           customerPhone: customer.customerPhone || null,
           queueNumber: nextQueueNumber,
-
-          // Todo: Nanti ambil dari session auth
-          // cashierId: session.user.id
         })
-        .returning();
+        .returning(); // Mengembalikan data order yang baru dibuat
 
-      // 3. Loop setiap item untuk simpan detail & kurangi stok
+      // D. Insert Items (Detail) & Update Stock
       for (const item of items) {
-        // A. Simpan ke order_items
         await tx.insert(orderItems).values({
-          orderId: newOrder.id,
+          orderId: insertedOrder.id,
           productId: item.id,
           quantity: item.quantity,
           priceAtTime: item.price,
         });
 
-        // B. Kurangi Stok Produk (Atomic Update)
-        // sql`...` memastikan kita mengurangi stok dari nilai yang ada di DB saat itu
         await tx
           .update(products)
           .set({
@@ -92,12 +89,19 @@ export async function processCheckout(
           })
           .where(eq(products.id, item.id));
       }
+
+      return insertedOrder;
     });
 
-    // 4. Refresh halaman agar stok di UI terupdate otomatis
+    // 3. Revalidate Cache
     revalidatePath('/projects/smart-pos');
 
-    return { success: true, message: 'Transaksi Berhasil!' };
+    // 4. Return Data Sukses
+    return {
+      success: true,
+      message: 'Transaksi Berhasil!',
+      data: newOrder,
+    };
   } catch (error) {
     console.error('Checkout Error:', error);
     return {

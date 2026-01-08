@@ -149,3 +149,36 @@ html.lenis body {
   -ms-overflow-style: none; /* IE and Edge */
   scrollbar-width: none; /* Firefox */
 }
+
+/* =========================================
+   6. PRINT STYLES
+   ========================================= */
+@media print {
+  /* Sembunyikan SEMUA elemen body */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Tampilkan hanya elemen struk */
+  .print\:block,
+  .print\:block * {
+    visibility: visible;
+  }
+
+  /* Posisikan struk di pojok kiri atas kertas */
+  .print\:absolute {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  /* Hapus margin default browser saat print */
+  @page {
+    margin: 0;
+    size: 58mm auto; /* Opsional: set ukuran kertas thermal */
+  }
+  body {
+    background-color: white;
+  }
+}

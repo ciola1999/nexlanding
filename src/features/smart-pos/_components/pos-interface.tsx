@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useMemo, useTransition, useEffect, useRef } from 'react';
-import { Product, CartItem } from '@/types'; // Pastikan path types benar
+import { Product, CartItem } from '@/types';
+import { Order } from '@/features/smart-pos/db/schema'; // Import tipe Order dari schema
 import { formatRupiah, cn } from '@/lib/utils';
 import {
   Trash2,
@@ -15,25 +16,35 @@ import {
   User,
   Phone,
   Armchair,
+  Printer,
+  CheckCircle2,
+  Send,
+  ArrowRight,
 } from 'lucide-react';
 import { processCheckout } from '@/features/smart-pos/_actions/transaction';
 import { toast } from 'sonner';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 
+// --- TYPE DEFINITIONS UTAMA ---
+// Kita gabungkan data Order dari DB dengan Snapshot Cart Items untuk ditampilkan di struk
+interface SuccessData {
+  order: Order;
+  items: CartItem[];
+}
+
 interface POSInterfaceProps {
   initialProducts: Product[];
 }
 
 export default function POSInterface({ initialProducts }: POSInterfaceProps) {
-  // State
+  // --- STATE ---
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isPending, startTransition] = useTransition();
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // STATE BARU: Untuk Modal Checkout
-  // STATE BARU: Kontrol Modal & Form Konsumen
+  // Modal Checkout State
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [customerForm, setCustomerForm] = useState({
     tableNumber: '',
@@ -41,11 +52,12 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     customerPhone: '',
   });
 
-  // Refs untuk animasi
+  // STATE BARU: Menyimpan data sukses untuk Modal & Struk
+  const [successData, setSuccessData] = useState<SuccessData | null>(null);
+
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // --- 1. PERFORMANCE OPTIMIZATION (useMemo) ---
-  // Filter produk dibungkus useMemo agar tidak render ulang saat ngetik cart
+  // --- MEMO & EFFECTS ---
   const filteredProducts = useMemo(() => {
     return initialProducts.filter(
       (p) =>
@@ -54,8 +66,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     );
   }, [initialProducts, searchQuery]);
 
-  // --- 2. GSAP ANIMATION ---
-  // Animasi saat hasil pencarian berubah (Grid produk muncul smooth)
   useGSAP(
     () => {
       if (filteredProducts.length > 0) {
@@ -69,7 +79,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     { dependencies: [filteredProducts], scope: containerRef }
   );
 
-  // --- 3. STORAGE LOGIC (Tetap pertahankan logic kamu yg sudah benar) ---
   useEffect(() => {
     const timer = setTimeout(() => {
       if (typeof window !== 'undefined') {
@@ -94,7 +103,7 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     }
   }, [cart, isInitialized]);
 
-  // --- 4. CART LOGIC ---
+  // --- CART ACTIONS ---
   const addToCart = (product: Product) => {
     setCart((prev) => {
       const existing = prev.find((item) => item.id === product.id);
@@ -115,19 +124,16 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     setCart((prev) =>
       prev
         .map((item) => {
-          if (item.id === productId) {
+          if (item.id === productId)
             return { ...item, quantity: Math.max(0, item.quantity + delta) };
-          }
           return item;
         })
         .filter((item) => item.quantity > 0)
     );
   };
 
-  const removeFromCart = (productId: number) => {
+  const removeFromCart = (productId: number) =>
     setCart((prev) => prev.filter((item) => item.id !== productId));
-  };
-
   const clearCart = () => {
     setCart([]);
     toast.warning('Keranjang dikosongkan');
@@ -137,43 +143,92 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     return cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
   }, [cart]);
 
-  // LOGIC BARU: Handle Input Change
+  // --- CHECKOUT LOGIC ---
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setCustomerForm({ ...customerForm, [e.target.name]: e.target.value });
   };
 
-  const openCheckoutModal = () => {
-    if (cart.length === 0) return;
-    setIsCheckoutOpen(true);
-  };
-
-  // LOGIC BARU: Submit Transaksi Final
-  // FUNGSI BARU: Proses Pembayaran Final (Dipanggil dari Modal)
   const handleFinalPayment = () => {
     if (!customerForm.tableNumber.trim()) {
       toast.error('Mohon isi Nomor Meja');
       return;
     }
 
-    startTransition(async () => {
-      // Panggil Server Action dengan parameter tambahan
-      const result = await processCheckout(cart, customerForm);
+    // Simpan snapshot keranjang saat ini karena cart akan di-reset
+    const currentCartSnapshot = [...cart];
 
-      if (result.success) {
-        toast.success(result.message);
-        setCart([]); // Kosongkan keranjang
-        setIsCheckoutOpen(false); // Tutup modal
+    startTransition(async () => {
+      const checkoutItems = currentCartSnapshot.map((item) => ({
+        id: item.id,
+        quantity: item.quantity,
+        price: item.price,
+      }));
+
+      const result = await processCheckout(checkoutItems, customerForm);
+
+      if (result.success && result.data) {
+        // Simpan data order DB + item snapshot ke state successData
+        setSuccessData({
+          order: result.data,
+          items: currentCartSnapshot,
+        });
+
+        // Reset UI
+        setCart([]);
+        setIsCheckoutOpen(false);
         setCustomerForm({
           tableNumber: '',
           customerName: '',
           customerPhone: '',
-        }); // Reset form
+        });
+        toast.success('Transaksi Berhasil!');
       } else {
-        toast.error(result.message);
+        toast.error(result.message || 'Terjadi kesalahan');
       }
     });
   };
-  // UI Loading Awal
+
+  // --- ACTIONS: PRINT & WA ---
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const handleSendWhatsApp = () => {
+    if (!successData) return;
+    const { order, items } = successData;
+
+    // Format Pesan WA
+    let message = `*NEXLANDING POS*\n`;
+    message += `--------------------------------\n`;
+    message += `No. Antrian: *${order.queueNumber}*\n`;
+    message += `Meja: ${order.tableNumber}\n`;
+    message += `Pelanggan: ${order.customerName || 'Guest'}\n`;
+    message += `--------------------------------\n`;
+
+    items.forEach((item) => {
+      message += `${item.quantity}x ${item.name}\n`;
+      message += `@ ${formatRupiah(item.price)}\n`;
+    });
+
+    message += `--------------------------------\n`;
+    message += `*TOTAL: ${formatRupiah(order.totalAmount)}*\n`;
+    message += `--------------------------------\n`;
+    message += `Terima kasih!`;
+
+    const encodedMessage = encodeURIComponent(message);
+
+    // Logic Redirect WA
+    let phoneUrl = `https://wa.me/?text=${encodedMessage}`; // Default (pilih kontak sendiri)
+
+    if (order.customerPhone) {
+      let phone = order.customerPhone.replace(/\D/g, '');
+      if (phone.startsWith('0')) phone = '62' + phone.substring(1);
+      phoneUrl = `https://wa.me/${phone}?text=${encodedMessage}`;
+    }
+
+    window.open(phoneUrl, '_blank');
+  };
+
   if (!isInitialized) {
     return (
       <div className="flex h-full items-center justify-center text-[#dfff4f]">
@@ -183,18 +238,142 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
   }
 
   return (
-    // Gunakan h-full agar mengisi sisa ruang dari parent
     <div
       ref={containerRef}
       className="flex flex-col lg:flex-row h-full gap-6 relative"
     >
       {/* ========================================================= */}
-      {/* MODAL CHECKOUT OVERLAY (Tambahkan di dalam container utama) */}
+      {/* STRUK THERMAL (HIDDEN ON SCREEN, VISIBLE ON PRINT)       */}
       {/* ========================================================= */}
-      {isCheckoutOpen && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 rounded-3xl animate-in fade-in duration-200">
+      {successData && (
+        <div className="hidden print:block print:w-[58mm] print:text-black print:bg-white print:absolute print:top-0 print:left-0 print:z-[9999]">
+          <div className="p-2 text-xs font-mono">
+            <div className="text-center mb-2">
+              <h1 className="text-lg font-bold">NEXLANDING</h1>
+              <p>Smart POS System</p>
+            </div>
+
+            <div className="border-b border-black border-dashed my-2"></div>
+
+            <div className="flex justify-between">
+              <span>Date:</span>
+              {/* Menggunakan createdAt dari DB yang berupa Date object */}
+              <span>
+                {successData.order.createdAt
+                  ? new Date(successData.order.createdAt).toLocaleDateString()
+                  : '-'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span>Order ID:</span>
+              <span>#{successData.order.id}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Table:</span>
+              <span>{successData.order.tableNumber}</span>
+            </div>
+
+            <div className="text-center my-4 border-2 border-black py-2 rounded">
+              <span className="block text-sm">Nomor Antrian</span>
+              <span className="text-3xl font-bold">
+                {successData.order.queueNumber}
+              </span>
+            </div>
+
+            <div className="border-b border-black border-dashed my-2"></div>
+
+            {successData.items.map((item, idx) => (
+              <div key={idx} className="mb-1">
+                <div>{item.name}</div>
+                <div className="flex justify-between">
+                  <span>
+                    {item.quantity} x {item.price.toLocaleString()}
+                  </span>
+                  <span>{(item.quantity * item.price).toLocaleString()}</span>
+                </div>
+              </div>
+            ))}
+
+            <div className="border-b border-black border-dashed my-2"></div>
+
+            <div className="flex justify-between font-bold text-sm">
+              <span>TOTAL</span>
+              <span>{formatRupiah(successData.order.totalAmount)}</span>
+            </div>
+
+            <div className="text-center mt-4 mb-8">
+              <p>Terima Kasih</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL SUCCESS (GLASSMORPHISM)                             */}
+      {/* ========================================================= */}
+      {successData && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-300 print:hidden">
+          <div className="bg-[#1e1f24] border border-[#dfff4f]/20 w-full max-w-sm rounded-3xl shadow-[0_0_50px_rgba(223,255,79,0.1)] p-8 text-center relative overflow-hidden">
+            {/* Decoration BG */}
+            <div className="absolute -top-10 -right-10 w-32 h-32 bg-[#dfff4f]/10 rounded-full blur-3xl"></div>
+            <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-[#dfff4f]/10 rounded-full blur-3xl"></div>
+
+            <div className="w-20 h-20 bg-[#dfff4f] rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-[#dfff4f]/20">
+              <CheckCircle2 size={40} className="text-black" />
+            </div>
+
+            <h2 className="text-2xl font-bold text-white mb-1">
+              Transaksi Berhasil!
+            </h2>
+            <p className="text-gray-400 text-sm mb-6">
+              Order #{successData.order.id} telah masuk antrian.
+            </p>
+
+            {/* Queue Number Display */}
+            <div className="bg-black/30 border border-white/10 rounded-2xl p-4 mb-6">
+              <p className="text-xs uppercase text-gray-500 font-bold mb-1">
+                Nomor Antrian
+              </p>
+              <p className="text-5xl font-bold text-[#dfff4f] tracking-tighter">
+                {successData.order.queueNumber}
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-3">
+              <button
+                onClick={handlePrint}
+                className="w-full bg-white text-black font-bold py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-gray-200 transition-colors"
+              >
+                <Printer size={18} />
+                Cetak Struk
+              </button>
+
+              <button
+                onClick={handleSendWhatsApp}
+                className="w-full bg-[#25D366] text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-[#20bd5a] transition-colors"
+              >
+                <Send size={18} />
+                Kirim WhatsApp
+              </button>
+
+              <button
+                onClick={() => setSuccessData(null)}
+                className="w-full text-gray-400 py-3 rounded-xl flex items-center justify-center gap-2 hover:text-white transition-colors mt-2"
+              >
+                Transaksi Baru <ArrowRight size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL CHECKOUT FORM (EXISTING)                            */}
+      {/* ========================================================= */}
+      {isCheckoutOpen && !successData && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 rounded-3xl animate-in fade-in duration-200 print:hidden">
           <div className="bg-[#1e1f24] border border-white/10 w-full max-w-md rounded-2xl shadow-2xl p-6">
-            {/* Header Modal */}
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-white">Info Pesanan</h3>
               <button
@@ -205,9 +384,7 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
               </button>
             </div>
 
-            {/* Form Input */}
             <div className="space-y-4">
-              {/* Nomor Meja (Wajib) */}
               <div>
                 <label className="block text-xs font-bold text-[#dfff4f] uppercase mb-1 ml-1">
                   Nomor Meja *
@@ -228,10 +405,9 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                 </div>
               </div>
 
-              {/* Nama (Opsional) */}
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">
-                  Nama Pemesan (Opsional)
+                  Nama Pemesan
                 </label>
                 <div className="relative">
                   <User
@@ -248,10 +424,9 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                 </div>
               </div>
 
-              {/* No HP (Opsional) */}
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">
-                  WhatsApp / HP (Opsional)
+                  WhatsApp (Opsional)
                 </label>
                 <div className="relative">
                   <Phone
@@ -270,7 +445,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
               </div>
             </div>
 
-            {/* Total Summary Kecil */}
             <div className="mt-6 pt-4 border-t border-white/10 flex justify-between items-center mb-6">
               <span className="text-gray-400">Total Pembayaran</span>
               <span className="text-xl font-bold text-[#dfff4f]">
@@ -278,7 +452,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
               </span>
             </div>
 
-            {/* Tombol Aksi */}
             <button
               onClick={handleFinalPayment}
               disabled={isPending}
@@ -293,11 +466,9 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
           </div>
         </div>
       )}
-      {/* ========================================================= */}
 
-      {/* --- BAGIAN KIRI: DAFTAR PRODUK (70% width) --- */}
-      <div className="flex-1 flex flex-col gap-6 overflow-hidden">
-        {/* Search Bar (Modern Glass) */}
+      {/* --- BAGIAN KIRI: DAFTAR PRODUK (SAMA, TAMBAH CLASS print:hidden) --- */}
+      <div className="flex-1 flex flex-col gap-6 overflow-hidden print:hidden">
         <div className="relative group">
           <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
             <Search
@@ -315,7 +486,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
           />
         </div>
 
-        {/* Product Grid */}
         <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
           {filteredProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-gray-600 gap-4">
@@ -334,7 +504,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                       'opacity-50 pointer-events-none grayscale'
                   )}
                 >
-                  {/* Stok Badge */}
                   <div className="absolute top-3 right-3">
                     <span
                       className={cn(
@@ -347,23 +516,17 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                       Stock: {product.stock}
                     </span>
                   </div>
-
-                  {/* Icon/Image Placeholder */}
                   <div className="h-24 w-full bg-white/5 rounded-xl mb-4 flex items-center justify-center group-hover:bg-white/10 transition-colors">
-                    {/* Nanti bisa diganti <Image> */}
                     <span className="text-2xl font-bold text-white/20 group-hover:text-[#dfff4f]/50 transition-colors">
                       {product.name.charAt(0)}
                     </span>
                   </div>
-
-                  {/* Info */}
                   <h3 className="font-medium text-gray-200 line-clamp-1 group-hover:text-[#dfff4f] transition-colors">
                     {product.name}
                   </h3>
                   <p className="text-xs text-gray-500 mb-2 font-mono">
                     {product.sku || 'NO-SKU'}
                   </p>
-
                   <div className="flex items-center justify-between">
                     <p className="font-bold text-white">
                       {formatRupiah(product.price)}
@@ -379,10 +542,9 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
         </div>
       </div>
 
-      {/* --- BAGIAN KANAN: KERANJANG (30% width / Fixed Sidebar) --- */}
-      <div className="w-full lg:w-[400px] flex flex-col h-[calc(100vh-140px)] sticky top-4">
+      {/* --- BAGIAN KANAN: KERANJANG (SAMA, TAMBAH CLASS print:hidden) --- */}
+      <div className="w-full lg:w-[400px] flex flex-col h-[calc(100vh-140px)] sticky top-4 print:hidden">
         <div className="bg-[#18191e] border border-white/5 rounded-3xl shadow-2xl flex flex-col h-full overflow-hidden">
-          {/* Header Keranjang */}
           <div className="p-5 border-b border-white/5 bg-[#18191e] flex justify-between items-center z-10">
             <div className="flex items-center gap-2">
               <ShoppingCart className="text-[#dfff4f]" size={20} />
@@ -393,7 +555,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
             </span>
           </div>
 
-          {/* List Item */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
             {cart.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-gray-600 gap-3 opacity-50">
@@ -406,7 +567,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                   key={item.id}
                   className="group flex gap-3 bg-white/5 hover:bg-white/[0.07] p-3 rounded-2xl transition-all border border-transparent hover:border-white/10"
                 >
-                  {/* Item Info */}
                   <div className="flex-1">
                     <p className="text-sm font-medium text-white line-clamp-1">
                       {item.name}
@@ -415,8 +575,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                       {formatRupiah(item.price)}
                     </p>
                   </div>
-
-                  {/* Action Buttons */}
                   <div className="flex items-center gap-3 bg-black/20 rounded-xl px-2 py-1 h-fit self-center">
                     <button
                       onClick={() => updateQuantity(item.id, -1)}
@@ -434,7 +592,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                       <Plus size={14} />
                     </button>
                   </div>
-
                   <button
                     onClick={() => removeFromCart(item.id)}
                     className="text-gray-600 hover:text-red-500 transition-colors p-1"
@@ -446,7 +603,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
             )}
           </div>
 
-          {/* Footer Summary & Checkout */}
           <div className="p-5 bg-[#121317] border-t border-white/5 space-y-4">
             <div className="space-y-2">
               <div className="flex justify-between text-sm text-gray-400">
@@ -471,9 +627,8 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
               >
                 <Trash2 size={18} />
               </button>
-
               <button
-                onClick={openCheckoutModal}
+                onClick={() => setIsCheckoutOpen(true)}
                 disabled={cart.length === 0 || isPending}
                 className="col-span-3 bg-[#dfff4f] hover:bg-[#ccee3d] text-black font-bold py-3.5 rounded-xl transition-all shadow-[0_0_20px_rgba(223,255,79,0.1)] hover:shadow-[0_0_30px_rgba(223,255,79,0.3)] disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2"
               >
