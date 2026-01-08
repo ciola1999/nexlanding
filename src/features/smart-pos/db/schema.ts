@@ -63,9 +63,18 @@ export const orders = pgTable('orders', {
   totalAmount: integer('total_amount').notNull(),
   paymentMethod: text('payment_method').default('CASH').notNull(),
 
+  // --- KOLOM BARU ---
+  // 1. Data Konsumen
+  tableNumber: text('table_number').notNull(), // String agar bisa input "A1", "VIP 2", dll
+  customerName: text('customer_name'), // Nullable (Opsional)
+  customerPhone: text('customer_phone'), // Nullable (Opsional)
+
+  // 2. Nomor Antrian (Harian)
+  queueNumber: integer('queue_number').notNull().default(1),
+  // ------------------
+
   // UPDATE PENTING: Menghubungkan transaksi dengan kasir yang bertugas
   cashierId: integer('cashier_id').references(() => users.id),
-
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 

@@ -11,6 +11,10 @@ import {
   Loader2,
   ShoppingCart,
   PackageOpen,
+  X,
+  User,
+  Phone,
+  Armchair,
 } from 'lucide-react';
 import { processCheckout } from '@/features/smart-pos/_actions/transaction';
 import { toast } from 'sonner';
@@ -27,6 +31,15 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isPending, startTransition] = useTransition();
   const [isInitialized, setIsInitialized] = useState(false);
+
+  // STATE BARU: Untuk Modal Checkout
+  // STATE BARU: Kontrol Modal & Form Konsumen
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [customerForm, setCustomerForm] = useState({
+    tableNumber: '',
+    customerName: '',
+    customerPhone: '',
+  });
 
   // Refs untuk animasi
   const containerRef = useRef<HTMLDivElement>(null);
@@ -124,19 +137,42 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     return cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
   }, [cart]);
 
-  const handleCheckout = () => {
+  // LOGIC BARU: Handle Input Change
+  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCustomerForm({ ...customerForm, [e.target.name]: e.target.value });
+  };
+
+  const openCheckoutModal = () => {
     if (cart.length === 0) return;
+    setIsCheckoutOpen(true);
+  };
+
+  // LOGIC BARU: Submit Transaksi Final
+  // FUNGSI BARU: Proses Pembayaran Final (Dipanggil dari Modal)
+  const handleFinalPayment = () => {
+    if (!customerForm.tableNumber.trim()) {
+      toast.error('Mohon isi Nomor Meja');
+      return;
+    }
+
     startTransition(async () => {
-      const result = await processCheckout(cart);
+      // Panggil Server Action dengan parameter tambahan
+      const result = await processCheckout(cart, customerForm);
+
       if (result.success) {
-        toast.success('Transaksi Berhasil!', { description: result.message });
-        setCart([]);
+        toast.success(result.message);
+        setCart([]); // Kosongkan keranjang
+        setIsCheckoutOpen(false); // Tutup modal
+        setCustomerForm({
+          tableNumber: '',
+          customerName: '',
+          customerPhone: '',
+        }); // Reset form
       } else {
-        toast.error('Gagal', { description: result.message });
+        toast.error(result.message);
       }
     });
   };
-
   // UI Loading Awal
   if (!isInitialized) {
     return (
@@ -148,7 +184,117 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
 
   return (
     // Gunakan h-full agar mengisi sisa ruang dari parent
-    <div ref={containerRef} className="flex flex-col lg:flex-row h-full gap-6">
+    <div
+      ref={containerRef}
+      className="flex flex-col lg:flex-row h-full gap-6 relative"
+    >
+      {/* ========================================================= */}
+      {/* MODAL CHECKOUT OVERLAY (Tambahkan di dalam container utama) */}
+      {/* ========================================================= */}
+      {isCheckoutOpen && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 rounded-3xl animate-in fade-in duration-200">
+          <div className="bg-[#1e1f24] border border-white/10 w-full max-w-md rounded-2xl shadow-2xl p-6">
+            {/* Header Modal */}
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-white">Info Pesanan</h3>
+              <button
+                onClick={() => setIsCheckoutOpen(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Form Input */}
+            <div className="space-y-4">
+              {/* Nomor Meja (Wajib) */}
+              <div>
+                <label className="block text-xs font-bold text-[#dfff4f] uppercase mb-1 ml-1">
+                  Nomor Meja *
+                </label>
+                <div className="relative">
+                  <Armchair
+                    className="absolute left-3 top-3 text-gray-400"
+                    size={18}
+                  />
+                  <input
+                    name="tableNumber"
+                    autoFocus
+                    value={customerForm.tableNumber}
+                    onChange={handleFormChange}
+                    placeholder="Contoh: 12 atau VIP A"
+                    className="w-full bg-black/30 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white focus:border-[#dfff4f] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Nama (Opsional) */}
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">
+                  Nama Pemesan (Opsional)
+                </label>
+                <div className="relative">
+                  <User
+                    className="absolute left-3 top-3 text-gray-400"
+                    size={18}
+                  />
+                  <input
+                    name="customerName"
+                    value={customerForm.customerName}
+                    onChange={handleFormChange}
+                    placeholder="Nama pelanggan..."
+                    className="w-full bg-black/30 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white focus:border-[#dfff4f] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* No HP (Opsional) */}
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">
+                  WhatsApp / HP (Opsional)
+                </label>
+                <div className="relative">
+                  <Phone
+                    className="absolute left-3 top-3 text-gray-400"
+                    size={18}
+                  />
+                  <input
+                    name="customerPhone"
+                    type="number"
+                    value={customerForm.customerPhone}
+                    onChange={handleFormChange}
+                    placeholder="08..."
+                    className="w-full bg-black/30 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white focus:border-[#dfff4f] focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Total Summary Kecil */}
+            <div className="mt-6 pt-4 border-t border-white/10 flex justify-between items-center mb-6">
+              <span className="text-gray-400">Total Pembayaran</span>
+              <span className="text-xl font-bold text-[#dfff4f]">
+                {formatRupiah(subtotal)}
+              </span>
+            </div>
+
+            {/* Tombol Aksi */}
+            <button
+              onClick={handleFinalPayment}
+              disabled={isPending}
+              className="w-full bg-[#dfff4f] hover:bg-[#ccee3d] text-black font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
+            >
+              {isPending ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                'Konfirmasi & Bayar'
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+      {/* ========================================================= */}
+
       {/* --- BAGIAN KIRI: DAFTAR PRODUK (70% width) --- */}
       <div className="flex-1 flex flex-col gap-6 overflow-hidden">
         {/* Search Bar (Modern Glass) */}
@@ -327,7 +473,7 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
               </button>
 
               <button
-                onClick={handleCheckout}
+                onClick={openCheckoutModal}
                 disabled={cart.length === 0 || isPending}
                 className="col-span-3 bg-[#dfff4f] hover:bg-[#ccee3d] text-black font-bold py-3.5 rounded-xl transition-all shadow-[0_0_20px_rgba(223,255,79,0.1)] hover:shadow-[0_0_30px_rgba(223,255,79,0.3)] disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2"
               >
