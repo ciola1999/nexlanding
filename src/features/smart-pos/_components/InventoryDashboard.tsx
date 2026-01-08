@@ -7,7 +7,8 @@ import { Package, AlertTriangle, Search, ArrowLeft, Plus } from 'lucide-react';
 import Link from 'next/link';
 
 // IMPORT KOMPONEN MODULAR KITA
-import ProductTable, { Product } from './product-table';
+import ProductTable from './product-table';
+import type { Product } from '@/features/smart-pos/db/schema';
 import SeedButton from './seed-button';
 import ResetButton from './reset-button';
 import ProductForm from './Product-Form'; // Import komponen baru
