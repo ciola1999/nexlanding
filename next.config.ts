@@ -8,12 +8,25 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
 
-  // 👇 INI SOLUSINYA: Daftarkan Unsplash di sini
+  // ❌ JANGAN TARUH bodySizeLimit DI SINI
+
+  // ✅ TARUH DI DALAM 'experimental'
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '1mb', // <--- Di sini tempatnya
+    },
+  },
+
+  // Config Images
   images: {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: 'images.unsplash.com', // Izin resmi buat Unsplash
+        hostname: 'images.unsplash.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'plus.unsplash.com', // Kadang unsplash pakai subdomain ini juga
       },
     ],
   },

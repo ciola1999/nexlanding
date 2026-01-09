@@ -29,6 +29,7 @@ import { processCheckout } from '@/features/smart-pos/_actions/transaction';
 import { toast } from 'sonner';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
+import Image from 'next/image';
 
 // --- TYPE DEFINITIONS UTAMA ---
 // Kita gabungkan data Order dari DB dengan Snapshot Cart Items untuk ditampilkan di struk
@@ -137,6 +138,36 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
           return item;
         })
         .filter((item) => item.quantity > 0)
+    );
+  };
+
+  const handleManualQuantity = (itemId: number, valueStr: string) => {
+    // 1. Cek jika input kosong (saat user baru hapus angka) biarkan dulu
+    if (valueStr === '') return;
+
+    const newValue = parseInt(valueStr);
+
+    // 2. Cek apakah angka valid
+    if (isNaN(newValue) || newValue < 1) return;
+
+    // 3. Cek stok tersedia
+    const itemInCart = cart.find((item) => item.id === itemId);
+    if (itemInCart && newValue > itemInCart.stock) {
+      toast.error(`Stok tidak cukup! Sisa stok: ${itemInCart.stock}`);
+      // Set ke max stok
+      setCart((prev) =>
+        prev.map((item) =>
+          item.id === itemId ? { ...item, quantity: itemInCart.stock } : item
+        )
+      );
+      return;
+    }
+
+    // 4. Update cart
+    setCart((prev) =>
+      prev.map((item) =>
+        item.id === itemId ? { ...item, quantity: newValue } : item
+      )
     );
   };
 
@@ -601,47 +632,78 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 pb-20">
               {filteredProducts.map((product) => (
-                <div
+                <button
                   key={product.id}
-                  onClick={() => product.stock > 0 && addToCart(product)}
+                  onClick={(e) => {
+                    // 1. Cek stok dulu
+                    if (product.stock > 0) {
+                      e.stopPropagation(); // Stop event bubbling (opsional, tergantung kebutuhan)
+                      addToCart(product); // Baru jalankan ini
+                    }
+                  }}
                   className={cn(
-                    'product-card group relative bg-[#18191e] border border-white/5 rounded-2xl p-4 cursor-pointer transition-all duration-300 hover:border-[#dfff4f]/30 hover:shadow-[0_0_20px_rgba(223,255,79,0.05)] hover:-translate-y-1',
-                    product.stock <= 0 &&
-                      'opacity-50 pointer-events-none grayscale'
+                    'group relative flex flex-col justify-between bg-[#18191e] border border-white/5 rounded-2xl p-4 hover:border-[#dfff4f]/50 transition-all duration-300 hover:shadow-[0_0_20px_rgba(223,255,79,0.1)] text-left overflow-hidden'
                   )}
                 >
-                  <div className="absolute top-3 right-3">
-                    <span
-                      className={cn(
-                        'text-[10px] px-2 py-0.5 rounded-full font-bold',
-                        product.stock < 10
-                          ? 'bg-red-500/10 text-red-500'
-                          : 'bg-white/5 text-gray-400'
+                  {/* --- BAGIAN 1: GAMBAR --- */}
+                  <div className="relative w-full h-32 mb-3 rounded-xl overflow-hidden bg-white/5 flex items-center justify-center">
+                    {product.imageUrl ? (
+                      <Image
+                        src={product.imageUrl}
+                        alt={product.name}
+                        fill
+                        className="object-cover group-hover:scale-110 transition-transform duration-500"
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                      />
+                    ) : (
+                      <PackageOpen
+                        className="text-gray-600 group-hover:text-[#dfff4f] transition-colors"
+                        size={32}
+                      />
+                    )}
+
+                    {/* LOGIC A: Badge Merah di Gambar (Hanya kalau Stok < 10) */}
+                    {product.stock < 10 && (
+                      <div className="absolute top-2 right-2 bg-red-500/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm backdrop-blur-sm z-10 animate-pulse">
+                        Sisa {product.stock}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* --- BAGIAN 2: INFO TEXT --- */}
+                  <div>
+                    {/* Wrapper Flex untuk Nama & Stok Aman */}
+                    <div className="flex justify-between items-start gap-2 mb-1">
+                      {/* Nama Produk */}
+                      <h3
+                        className="font-bold text-white line-clamp-1 group-hover:text-[#dfff4f] transition-colors flex-1"
+                        title={product.name}
+                      >
+                        {product.name}
+                      </h3>
+
+                      {/* LOGIC B: Badge Biasa di Samping Nama (Hanya kalau Stok >= 10) */}
+                      {product.stock >= 10 && (
+                        <span className="text-[10px] font-mono text-gray-500 bg-white/5 px-1.5 py-0.5 rounded border border-white/5 shrink-0 whitespace-nowrap group-hover:bg-[#dfff4f]/10 group-hover:text-[#dfff4f] group-hover:border-[#dfff4f]/20 transition-colors">
+                          Stok: {product.stock}
+                        </span>
                       )}
-                    >
-                      Stock: {product.stock}
-                    </span>
-                  </div>
-                  <div className="h-24 w-full bg-white/5 rounded-xl mb-4 flex items-center justify-center group-hover:bg-white/10 transition-colors">
-                    <span className="text-2xl font-bold text-white/20 group-hover:text-[#dfff4f]/50 transition-colors">
-                      {product.name.charAt(0)}
-                    </span>
-                  </div>
-                  <h3 className="font-medium text-gray-200 line-clamp-1 group-hover:text-[#dfff4f] transition-colors">
-                    {product.name}
-                  </h3>
-                  <p className="text-xs text-gray-500 mb-2 font-mono">
-                    {product.sku || 'NO-SKU'}
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <p className="font-bold text-white">
-                      {formatRupiah(product.price)}
+                    </div>
+
+                    <p className="text-xs text-gray-500 mb-2 font-mono">
+                      {product.sku || 'NO-SKU'}
                     </p>
-                    <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-[#dfff4f] opacity-0 group-hover:opacity-100 transition-all scale-50 group-hover:scale-100">
-                      <Plus size={16} />
+
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[#dfff4f] font-mono">
+                        {formatRupiah(product.price)}
+                      </span>
+                      <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-[#dfff4f] group-hover:text-black transition-colors">
+                        <Plus size={16} />
+                      </div>
                     </div>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}
@@ -688,9 +750,20 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                     >
                       <Minus size={14} />
                     </button>
-                    <span className="text-sm font-bold w-4 text-center text-white">
-                      {item.quantity}
-                    </span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={item.quantity} // Pastikan value ambil dari state
+                      onChange={(e) =>
+                        handleManualQuantity(item.id, e.target.value)
+                      }
+                      className="w-12 text-center bg-transparent text-white font-mono font-bold text-sm focus:outline-none focus:bg-white/10 rounded [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                    {/* Note CSS di atas:
+   - w-12: lebar input
+   - bg-transparent: biar nyatu sama background
+   - [appearance:textfield] dst: Menyembunyikan panah up/down bawaan browser biar rapi
+*/}
                     <button
                       onClick={() => updateQuantity(item.id, 1)}
                       className="text-gray-400 hover:text-white transition-colors"

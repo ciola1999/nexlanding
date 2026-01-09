@@ -187,8 +187,6 @@ export default function InventoryDashboard({
           />
           Kembali ke Halaman Portfolio
         </Link>
-
-        {isFormOpen && <ProductForm onClose={() => setIsFormOpen(false)} />}
       </div>
     </div>
   );

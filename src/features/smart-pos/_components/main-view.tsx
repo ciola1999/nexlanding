@@ -145,7 +145,7 @@ export default function SmartPosMainView({
 
   return (
     <div className="min-h-screen bg-[#0f1014] text-white selection:bg-[#dfff4f] selection:text-black force-show-cursor">
-      <Toaster position="bottom-right" richColors closeButton theme="dark" />
+      <Toaster position="bottom-left" richColors closeButton theme="dark" />
 
       {/* Floating Navbar */}
       <div className="fixed top-6 left-1/2 -translate-x-1/2 w-[95%] max-w-[1600px] z-50">

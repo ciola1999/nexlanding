@@ -44,6 +44,7 @@ export const products = pgTable('products', {
   id: serial('id').primaryKey(),
   name: text('name').notNull(),
   description: text('description'),
+  imageUrl: text('image_url'),
   // Existing: Harga Jual (Selling Price)
   // Catatan: Anda pakai integer (Rp), itu oke untuk Rupiah.
   price: integer('price').notNull().default(0),

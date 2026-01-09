@@ -20,7 +20,7 @@ type HistoryItem = {
   id: number;
   totalAmount: number;
   paymentMethod: string;
-  tableNumber: string;
+  tableNumber: string | null;
   customerName?: string | null;
   customerPhone?: string | null;
   queueNumber: number;

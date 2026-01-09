@@ -11,8 +11,11 @@ import {
   CheckCircle2,
   X,
   Loader2,
+  ImagePlus,
 } from 'lucide-react';
 import { createProduct } from '../_actions/products';
+import Image from 'next/image'; // Import Next Image
+import { toast } from 'sonner'; // Jangan lupa import toast
 
 // --- SUB-COMPONENT: TOMBOL SUBMIT (Wajib dipisah agar useFormStatus jalan) ---
 function SubmitButton() {
@@ -56,6 +59,9 @@ export default function ProductForm({ onClose }: { onClose: () => void }) {
   const marginRaw = price > 0 ? (profit / price) * 100 : 0;
   const margin = parseFloat(marginRaw.toFixed(2));
 
+  // 👇 STATE UNTUK PREVIEW GAMBAR
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+
   // Efek samping: Jika sukses, tutup modal setelah delay
   if (state.success) {
     // Kita biarkan user baca pesan sukses sebentar, lalu tutup
@@ -83,6 +89,24 @@ export default function ProductForm({ onClose }: { onClose: () => void }) {
       duration: 0.5,
     });
   }, [margin]);
+
+  // 👇 FUNGSI HANDLE SAAT PILIH FILE
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // 🛡️ VALIDASI SIZE (Cek di sini sebelum upload)
+      // 5MB = 5 * 1024 * 1024
+      if (file.size > 1024 * 1024) {
+        toast.error('File terlalu besar! Maksimal 1MB.');
+        // Reset input agar user bisa pilih ulang
+        e.target.value = '';
+        return;
+      }
+
+      const objectUrl = URL.createObjectURL(file);
+      setImagePreview(objectUrl);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -128,6 +152,53 @@ export default function ProductForm({ onClose }: { onClose: () => void }) {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* --- BAGIAN INPUT GAMBAR (TARUH DI ATAS NAMA PRODUK) --- */}
+          <div className="mb-6 flex flex-col items-center">
+            <label
+              htmlFor="image-upload"
+              className="group relative w-32 h-32 rounded-2xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center cursor-pointer hover:border-[#dfff4f] hover:bg-white/5 transition-all overflow-hidden"
+            >
+              {imagePreview ? (
+                // Jika ada gambar dipilih, tampilkan preview
+                <>
+                  <Image
+                    src={imagePreview}
+                    alt="Preview"
+                    fill
+                    className="object-cover"
+                  />
+                  {/* Overlay saat hover untuk ganti gambar */}
+                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <ImagePlus className="text-white" size={24} />
+                  </div>
+                </>
+              ) : (
+                // Jika belum ada gambar
+                <div className="text-center p-2">
+                  <ImagePlus
+                    className="mx-auto text-gray-400 mb-2 group-hover:text-[#dfff4f] transition-colors"
+                    size={24}
+                  />
+                  <span className="text-[10px] text-gray-500 uppercase font-bold">
+                    Upload Foto
+                  </span>
+                </div>
+              )}
+
+              {/* Input File Tersembunyi */}
+              <input
+                id="image-upload"
+                name="image" // Harus sama dengan formData.get('image') di action
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleImageChange}
+              />
+            </label>
+            <p className="text-xs text-gray-500 mt-2">
+              Format: JPG, PNG (Max 2MB)
+            </p>
+          </div>
           {/* KOLOM KIRI (Input Biasa) */}
           <div className="space-y-5">
             <div>

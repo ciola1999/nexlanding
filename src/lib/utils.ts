@@ -13,3 +13,10 @@ export const formatRupiah = (amount: number) => {
     maximumFractionDigits: 0,
   }).format(amount);
 };
+
+export const formatPercent = (number: number) => {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'percent',
+    maximumFractionDigits: 1,
+  }).format(number / 100);
+};

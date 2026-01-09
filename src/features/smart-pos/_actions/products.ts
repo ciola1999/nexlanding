@@ -4,7 +4,8 @@ import { db } from '@/db';
 import { products, orderItems, orders } from '@/features/smart-pos/db/schema';
 import { desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
+import { writeFile } from 'fs/promises';
+import path from 'path';
 
 // Helper: Bikin angka acak
 const randomInt = (min: number, max: number) =>
@@ -118,6 +119,32 @@ export async function createProduct(
   // Simulasi delay biar loading kelihatan (hapus di production)
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
+  const imageFile = formData.get('image') as File;
+  let imageUrl = null;
+
+  if (imageFile && imageFile.size > 0) {
+    // Validasi tipe file (Opsional tapi disarankan)
+    if (!imageFile.type.startsWith('image/')) {
+      return { success: false, message: 'File harus berupa gambar' };
+    }
+
+    // Buat nama file unik (timestamp + nama asli biar gak bentrok)
+    const buffer = Buffer.from(await imageFile.arrayBuffer());
+    const fileName = `${Date.now()}-${imageFile.name.replaceAll(' ', '_')}`;
+
+    // Simpan di folder public/uploads
+    // Pastikan folder 'public/uploads' SUDAH DIBUAT secara manual di project kamu
+    const uploadDir = path.join(process.cwd(), 'public/uploads');
+
+    try {
+      await writeFile(path.join(uploadDir, fileName), buffer);
+      imageUrl = `/uploads/${fileName}`; // Path yang akan disimpan di DB
+    } catch (error) {
+      console.error('Upload Error:', error);
+      // Lanjut saja meski gagal upload, atau return error (opsional)
+    }
+  }
+
   try {
     const rawData = {
       name: formData.get('name') as string,
@@ -143,6 +170,7 @@ export async function createProduct(
       price: parseInt(rawData.price), // Integer (karena schema lama pakai Int)
       stock: parseInt(rawData.stock || '0'),
       description: rawData.description,
+      imageUrl: imageUrl,
       isActive: true,
     });
 
