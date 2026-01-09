@@ -21,7 +21,10 @@ type CheckoutItem = {
   price: number;
 };
 
+// --- UPDATE 1: Type Definition untuk Input Customer ---
 type CustomerData = {
+  orderType: 'dine_in' | 'take_away';
+  paymentMethod: 'cash' | 'transfer';
   tableNumber: string;
   customerName?: string;
   customerPhone?: string;
@@ -35,14 +38,21 @@ export async function processCheckout(
   if (!items.length) {
     return { success: false, message: 'Keranjang kosong' };
   }
-  if (!customer.tableNumber) {
-    return { success: false, message: 'Nomor Meja/Kursi wajib diisi!' };
+  // --- UPDATE 2: Logic Validasi Table Number ---
+  // Jika Dine In, nomor meja wajib. Jika Take Away, boleh kosong (kita set strip)
+  let finalTableNumber = customer.tableNumber;
+
+  if (customer.orderType === 'dine_in' && !finalTableNumber) {
+    return { success: false, message: 'Nomor Meja wajib diisi untuk Dine In!' };
+  }
+
+  if (customer.orderType === 'take_away' && !finalTableNumber) {
+    finalTableNumber = 'TAKE AWAY'; // Default value agar database tidak error jika kolom notNull
   }
 
   try {
-    // 2. Database Transaction
     const newOrder = await db.transaction(async (tx) => {
-      // A. Hitung Queue Number (Reset Harian)
+      // A. Hitung Queue Number (Tetap sama)
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
 
@@ -54,26 +64,28 @@ export async function processCheckout(
 
       const nextQueueNumber = (lastOrderToday?.queueNumber ?? 0) + 1;
 
-      // B. Hitung Total
+      // B. Hitung Total (Tetap sama)
       const totalAmount = items.reduce(
         (sum, item) => sum + item.price * item.quantity,
         0
       );
 
-      // C. Insert Order (Header)
+      // --- UPDATE 3: Insert dengan Data Baru ---
       const [insertedOrder] = await tx
         .insert(orders)
         .values({
           totalAmount,
-          paymentMethod: 'CASH',
-          tableNumber: customer.tableNumber,
+          orderType: customer.orderType, // field baru
+          paymentMethod: customer.paymentMethod, // field baru
+          tableNumber: finalTableNumber,
           customerName: customer.customerName || 'Guest',
           customerPhone: customer.customerPhone || null,
           queueNumber: nextQueueNumber,
+          // cashierId: ... (Nanti ambil dari session jika auth sudah jalan)
         })
-        .returning(); // Mengembalikan data order yang baru dibuat
+        .returning();
 
-      // D. Insert Items (Detail) & Update Stock
+      // D. Insert Items (Detail) & Update Stock (Tetap sama)
       for (const item of items) {
         await tx.insert(orderItems).values({
           orderId: insertedOrder.id,
@@ -93,7 +105,6 @@ export async function processCheckout(
       return insertedOrder;
     });
 
-    // 3. Revalidate Cache
     revalidatePath('/projects/smart-pos');
 
     // 4. Return Data Sukses

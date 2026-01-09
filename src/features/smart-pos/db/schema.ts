@@ -16,6 +16,10 @@ import { relations } from 'drizzle-orm';
 // Postgres akan menjaga integritas data ini level database.
 export const roleEnum = pgEnum('role', ['admin', 'cashier']);
 
+// --- UPDATE 1: Definisi Enum Baru ---
+export const orderTypeEnum = pgEnum('order_type', ['dine_in', 'take_away']);
+export const paymentMethodEnum = pgEnum('payment_method', ['cash', 'transfer']);
+
 // 2. Tabel Users
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
@@ -61,19 +65,18 @@ export const products = pgTable('products', {
 export const orders = pgTable('orders', {
   id: serial('id').primaryKey(),
   totalAmount: integer('total_amount').notNull(),
-  paymentMethod: text('payment_method').default('CASH').notNull(),
 
-  // --- KOLOM BARU ---
-  // 1. Data Konsumen
-  tableNumber: text('table_number').notNull(), // String agar bisa input "A1", "VIP 2", dll
-  customerName: text('customer_name'), // Nullable (Opsional)
-  customerPhone: text('customer_phone'), // Nullable (Opsional)
+  // Ganti kolom text biasa menjadi Enum
+  orderType: orderTypeEnum('order_type').default('dine_in').notNull(),
+  paymentMethod: paymentMethodEnum('payment_method').default('cash').notNull(),
 
-  // 2. Nomor Antrian (Harian)
+  // Table number sekarang bisa null jika Take Away (opsional, tergantung logic)
+  tableNumber: text('table_number'),
+
+  customerName: text('customer_name'),
+  customerPhone: text('customer_phone'),
   queueNumber: integer('queue_number').notNull().default(1),
-  // ------------------
 
-  // UPDATE PENTING: Menghubungkan transaksi dengan kasir yang bertugas
   cashierId: integer('cashier_id').references(() => users.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });

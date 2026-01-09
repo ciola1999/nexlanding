@@ -20,6 +20,10 @@ import {
   CheckCircle2,
   Send,
   ArrowRight,
+  Utensils,
+  ShoppingBag,
+  Banknote,
+  CreditCard,
 } from 'lucide-react';
 import { processCheckout } from '@/features/smart-pos/_actions/transaction';
 import { toast } from 'sonner';
@@ -46,10 +50,14 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
 
   // Modal Checkout State
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  // --- UPDATE 1: Update State Form ---
   const [customerForm, setCustomerForm] = useState({
     tableNumber: '',
     customerName: '',
     customerPhone: '',
+    // Tambahkan default value
+    orderType: 'dine_in' as 'dine_in' | 'take_away',
+    paymentMethod: 'cash' as 'cash' | 'transfer',
   });
 
   // STATE BARU: Menyimpan data sukses untuk Modal & Struk
@@ -148,38 +156,49 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     setCustomerForm({ ...customerForm, [e.target.name]: e.target.value });
   };
 
+  // --- UPDATE 2: Handle Change Khusus untuk Radio/Select ---
+  const handleValueChange = (field: string, value: string) => {
+    setCustomerForm((prev) => ({ ...prev, [field]: value }));
+  };
+
   const handleFinalPayment = () => {
-    if (!customerForm.tableNumber.trim()) {
-      toast.error('Mohon isi Nomor Meja');
+    // Validasi conditional: Table Number hanya wajib jika Dine In
+    if (
+      customerForm.orderType === 'dine_in' &&
+      !customerForm.tableNumber.trim()
+    ) {
+      toast.error('Mohon isi Nomor Meja untuk Dine In');
       return;
     }
 
-    // Simpan snapshot keranjang saat ini karena cart akan di-reset
     const currentCartSnapshot = [...cart];
 
     startTransition(async () => {
+      // ... (mapping items tetap sama) ...
       const checkoutItems = currentCartSnapshot.map((item) => ({
         id: item.id,
         quantity: item.quantity,
         price: item.price,
       }));
 
+      // Kirim customerForm lengkap (termasuk orderType & paymentMethod)
       const result = await processCheckout(checkoutItems, customerForm);
 
       if (result.success && result.data) {
-        // Simpan data order DB + item snapshot ke state successData
+        // ... (Logic sukses tetap sama) ...
         setSuccessData({
           order: result.data,
           items: currentCartSnapshot,
         });
-
-        // Reset UI
         setCart([]);
         setIsCheckoutOpen(false);
+        // Reset form ke default
         setCustomerForm({
           tableNumber: '',
           customerName: '',
           customerPhone: '',
+          orderType: 'dine_in',
+          paymentMethod: 'cash',
         });
         toast.success('Transaksi Berhasil!');
       } else {
@@ -369,11 +388,11 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
       )}
 
       {/* ========================================================= */}
-      {/* MODAL CHECKOUT FORM (EXISTING)                            */}
+      {/* MODAL CHECKOUT FORM (NO-DEPENDENCY VERSION)               */}
       {/* ========================================================= */}
       {isCheckoutOpen && !successData && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 rounded-3xl animate-in fade-in duration-200 print:hidden">
-          <div className="bg-[#1e1f24] border border-white/10 w-full max-w-md rounded-2xl shadow-2xl p-6">
+          <div className="bg-[#1e1f24] border border-white/10 w-full max-w-md rounded-2xl shadow-2xl p-6 overflow-y-auto max-h-[90vh] custom-scrollbar">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-white">Info Pesanan</h3>
               <button
@@ -384,85 +403,172 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
               </button>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-6">
+              {/* --- 1. TIPE PESANAN (Custom Radio Manual) --- */}
               <div>
-                <label className="block text-xs font-bold text-[#dfff4f] uppercase mb-1 ml-1">
-                  Nomor Meja *
+                <label className="text-xs font-bold text-gray-500 uppercase mb-3 block ml-1">
+                  Tipe Pesanan
                 </label>
-                <div className="relative">
-                  <Armchair
-                    className="absolute left-3 top-3 text-gray-400"
-                    size={18}
-                  />
-                  <input
-                    name="tableNumber"
-                    autoFocus
-                    value={customerForm.tableNumber}
-                    onChange={handleFormChange}
-                    placeholder="Contoh: 12 atau VIP A"
-                    className="w-full bg-black/30 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white focus:border-[#dfff4f] focus:outline-none"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Tombol Dine In */}
+                  <div
+                    onClick={() => handleValueChange('orderType', 'dine_in')}
+                    className={cn(
+                      'flex flex-col items-center justify-between rounded-xl border-2 p-4 cursor-pointer transition-all',
+                      customerForm.orderType === 'dine_in'
+                        ? 'border-[#dfff4f] text-[#dfff4f] bg-white/5' // Active State
+                        : 'border-white/10 bg-transparent text-gray-400 hover:bg-white/5 hover:text-white' // Inactive State
+                    )}
+                  >
+                    <Utensils className="mb-2 h-6 w-6" />
+                    <span className="font-bold">Dine In</span>
+                  </div>
+
+                  {/* Tombol Take Away */}
+                  <div
+                    onClick={() => handleValueChange('orderType', 'take_away')}
+                    className={cn(
+                      'flex flex-col items-center justify-between rounded-xl border-2 p-4 cursor-pointer transition-all',
+                      customerForm.orderType === 'take_away'
+                        ? 'border-[#dfff4f] text-[#dfff4f] bg-white/5'
+                        : 'border-white/10 bg-transparent text-gray-400 hover:bg-white/5 hover:text-white'
+                    )}
+                  >
+                    <ShoppingBag className="mb-2 h-6 w-6" />
+                    <span className="font-bold">Take Away</span>
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">
-                  Nama Pemesan
-                </label>
-                <div className="relative">
-                  <User
-                    className="absolute left-3 top-3 text-gray-400"
-                    size={18}
-                  />
-                  <input
-                    name="customerName"
-                    value={customerForm.customerName}
-                    onChange={handleFormChange}
-                    placeholder="Nama pelanggan..."
-                    className="w-full bg-black/30 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white focus:border-[#dfff4f] focus:outline-none"
-                  />
+              {/* --- 2. FORM INPUTS --- */}
+              <div className="space-y-4">
+                {/* Conditional Rendering: Nomor Meja hanya muncul jika Dine In */}
+                {customerForm.orderType === 'dine_in' && (
+                  <div className="animate-in slide-in-from-top-2 fade-in duration-300">
+                    <label className="block text-xs font-bold text-[#dfff4f] uppercase mb-1 ml-1">
+                      Nomor Meja *
+                    </label>
+                    <div className="relative">
+                      <Armchair
+                        className="absolute left-3 top-3 text-gray-400"
+                        size={18}
+                      />
+                      <input
+                        name="tableNumber"
+                        value={customerForm.tableNumber}
+                        onChange={handleFormChange}
+                        placeholder="Contoh: 12 atau VIP A"
+                        className="w-full bg-black/30 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white focus:border-[#dfff4f] focus:outline-none placeholder:text-gray-600"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Nama Pemesan */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">
+                    Nama Pemesan
+                  </label>
+                  <div className="relative">
+                    <User
+                      className="absolute left-3 top-3 text-gray-400"
+                      size={18}
+                    />
+                    <input
+                      name="customerName"
+                      value={customerForm.customerName}
+                      onChange={handleFormChange}
+                      placeholder="Nama pelanggan..."
+                      className="w-full bg-black/30 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white focus:border-[#dfff4f] focus:outline-none placeholder:text-gray-600"
+                    />
+                  </div>
+                </div>
+
+                {/* WhatsApp (Optional) */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">
+                    WhatsApp (Opsional)
+                  </label>
+                  <div className="relative">
+                    <Phone
+                      className="absolute left-3 top-3 text-gray-400"
+                      size={18}
+                    />
+                    <input
+                      name="customerPhone"
+                      value={customerForm.customerPhone}
+                      onChange={handleFormChange}
+                      placeholder="08xxxxxxxx"
+                      className="w-full bg-black/30 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white focus:border-[#dfff4f] focus:outline-none placeholder:text-gray-600"
+                    />
+                  </div>
                 </div>
               </div>
 
+              {/* --- 3. METODE PEMBAYARAN (Custom Radio Manual) --- */}
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">
-                  WhatsApp (Opsional)
+                <label className="text-xs font-bold text-gray-500 uppercase mb-3 block ml-1">
+                  Metode Pembayaran
                 </label>
-                <div className="relative">
-                  <Phone
-                    className="absolute left-3 top-3 text-gray-400"
-                    size={18}
-                  />
-                  <input
-                    name="customerPhone"
-                    type="number"
-                    value={customerForm.customerPhone}
-                    onChange={handleFormChange}
-                    placeholder="08..."
-                    className="w-full bg-black/30 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white focus:border-[#dfff4f] focus:outline-none"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Cash */}
+                  <div
+                    onClick={() => handleValueChange('paymentMethod', 'cash')}
+                    className={cn(
+                      'flex items-center justify-center gap-2 rounded-xl border p-3 cursor-pointer transition-all',
+                      customerForm.paymentMethod === 'cash'
+                        ? 'bg-[#dfff4f] text-black border-[#dfff4f] font-bold' // Active (Tombol Solid)
+                        : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10' // Inactive
+                    )}
+                  >
+                    <Banknote size={18} />
+                    <span>Cash</span>
+                  </div>
+
+                  {/* Transfer */}
+                  <div
+                    onClick={() =>
+                      handleValueChange('paymentMethod', 'transfer')
+                    }
+                    className={cn(
+                      'flex items-center justify-center gap-2 rounded-xl border p-3 cursor-pointer transition-all',
+                      customerForm.paymentMethod === 'transfer'
+                        ? 'bg-[#dfff4f] text-black border-[#dfff4f] font-bold'
+                        : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
+                    )}
+                  >
+                    <CreditCard size={18} />
+                    <span>Transfer</span>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="mt-6 pt-4 border-t border-white/10 flex justify-between items-center mb-6">
-              <span className="text-gray-400">Total Pembayaran</span>
-              <span className="text-xl font-bold text-[#dfff4f]">
-                {formatRupiah(subtotal)}
-              </span>
-            </div>
+            {/* Footer Modal: Total & Tombol Aksi */}
+            <div className="mt-8 pt-4 border-t border-white/10">
+              <div className="flex justify-between items-center mb-6">
+                <span className="text-gray-400">Total Pembayaran</span>
+                <span className="text-xl font-bold text-[#dfff4f]">
+                  {formatRupiah(subtotal)}
+                </span>
+              </div>
 
-            <button
-              onClick={handleFinalPayment}
-              disabled={isPending}
-              className="w-full bg-[#dfff4f] hover:bg-[#ccee3d] text-black font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
-            >
-              {isPending ? (
-                <Loader2 className="animate-spin" />
-              ) : (
-                'Konfirmasi & Bayar'
-              )}
-            </button>
+              <button
+                onClick={handleFinalPayment}
+                disabled={isPending}
+                className="w-full bg-[#dfff4f] hover:bg-[#ccee3d] text-black font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(223,255,79,0.2)]"
+              >
+                {isPending ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <>
+                    <span className="uppercase tracking-wide">
+                      Konfirmasi & Bayar
+                    </span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
