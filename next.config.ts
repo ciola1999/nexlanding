@@ -28,6 +28,11 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'plus.unsplash.com', // Kadang unsplash pakai subdomain ini juga
       },
+      // 👇 Tambahkan domain Supabase project kamu
+      {
+        protocol: 'https',
+        hostname: 'egzgoewvdgqukeschevz.supabase.co', // ⚠️ GANTI INI dengan hostname dari SUPABASE_URL kamu
+      },
     ],
   },
 };

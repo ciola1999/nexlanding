@@ -4,8 +4,7 @@ import { db } from '@/db';
 import { products, orderItems, orders } from '@/features/smart-pos/db/schema';
 import { desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
-import { writeFile } from 'fs/promises';
-import path from 'path';
+import { createClient } from '@supabase/supabase-js';
 
 // Helper: Bikin angka acak
 const randomInt = (min: number, max: number) =>
@@ -14,6 +13,10 @@ const randomInt = (min: number, max: number) =>
 // Helper: Pilih item acak dari array
 const randomChoice = <T>(arr: T[]): T =>
   arr[Math.floor(Math.random() * arr.length)];
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl!, supabaseAnonKey!);
 
 export type ActionState = {
   success?: boolean;
@@ -119,31 +122,38 @@ export async function createProduct(
   // Simulasi delay biar loading kelihatan (hapus di production)
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
-  const imageFile = formData.get('image') as File;
-  let imageUrl = null;
+  const imageFile = formData.get('image') as File; // Ambil filenya
+  let finalImageUrl = '';
 
   if (imageFile && imageFile.size > 0) {
-    // Validasi tipe file (Opsional tapi disarankan)
-    if (!imageFile.type.startsWith('image/')) {
-      return { success: false, message: 'File harus berupa gambar' };
+    // 1. Buat nama file unik (biar gak bentrok)
+    // Contoh: 170882233-kopi-susu.jpg
+    const uniqueFileName = `${Date.now()}-${imageFile.name.replaceAll(
+      ' ',
+      '-'
+    )}`;
+
+    // 2. Upload ke Bucket 'products'
+    const { data, error: uploadError } = await supabase.storage
+      .from('products') // Nama bucket yang kamu buat tadi
+      .upload(uniqueFileName, imageFile, {
+        cacheControl: '3600',
+        upsert: false,
+      });
+
+    if (uploadError) {
+      console.error('Upload Gagal:', uploadError);
+      throw new Error('Gagal upload gambar ke Supabase');
     }
 
-    // Buat nama file unik (timestamp + nama asli biar gak bentrok)
-    const buffer = Buffer.from(await imageFile.arrayBuffer());
-    const fileName = `${Date.now()}-${imageFile.name.replaceAll(' ', '_')}`;
+    // 3. Ambil Public URL-nya (Link yang bisa dibuka browser)
+    const { data: urlData } = supabase.storage
+      .from('products')
+      .getPublicUrl(uniqueFileName);
 
-    // Simpan di folder public/uploads
-    // Pastikan folder 'public/uploads' SUDAH DIBUAT secara manual di project kamu
-    const uploadDir = path.join(process.cwd(), 'public/uploads');
-
-    try {
-      await writeFile(path.join(uploadDir, fileName), buffer);
-      imageUrl = `/uploads/${fileName}`; // Path yang akan disimpan di DB
-    } catch (error) {
-      console.error('Upload Error:', error);
-      // Lanjut saja meski gagal upload, atau return error (opsional)
-    }
+    finalImageUrl = urlData.publicUrl;
   }
+  // --- LOGIKA UPLOAD SUPABASE SELESAI ---
 
   try {
     const rawData = {
@@ -170,7 +180,7 @@ export async function createProduct(
       price: parseInt(rawData.price), // Integer (karena schema lama pakai Int)
       stock: parseInt(rawData.stock || '0'),
       description: rawData.description,
-      imageUrl: imageUrl,
+      imageUrl: finalImageUrl,
       isActive: true,
     });
 
