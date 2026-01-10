@@ -41,7 +41,7 @@ export function CostEditableCell({ id, initialCost }: CostEditableCellProps) {
 
     if (val === initialCost) return;
 
-    setIsLoading(true);
+    setIsEditing(true);
     startTransition(async () => {
       setOptimisticCost(val);
       const result = await updateProductCost(id, val);
@@ -64,11 +64,10 @@ export function CostEditableCell({ id, initialCost }: CostEditableCellProps) {
     }
   };
 
-  // --- MODE EDIT (CLEAN & MINIMALIST) ---
+  // --- MODE EDIT (TETAP SAMA) ---
   if (isEditing) {
     return (
       <div className="relative flex justify-center min-h-[30px]">
-        {/* Backdrop transparent */}
         <div
           className="fixed inset-0 z-40"
           onClick={() => setIsEditing(false)}
@@ -78,12 +77,11 @@ export function CostEditableCell({ id, initialCost }: CostEditableCellProps) {
           className={cn(
             'absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50',
             'flex items-center gap-1 p-1 min-w-[130px]',
-            'bg-[#121317] border border-[#dfff4f]', // Konsisten dengan PriceCell
+            'bg-[#121317] border border-[#dfff4f]',
             'rounded-lg shadow-xl shadow-black/50',
             'animate-in zoom-in-95 duration-150'
           )}
         >
-          {/* Label Rp */}
           <span className="absolute left-2 text-[#dfff4f]/70 font-mono text-xs pointer-events-none">
             Rp
           </span>
@@ -96,7 +94,6 @@ export function CostEditableCell({ id, initialCost }: CostEditableCellProps) {
               'w-full bg-transparent text-white text-right font-mono font-bold text-sm',
               'pl-8 pr-2 py-1.5',
               'outline-none border-none ring-0',
-              // Menghilangkan Spinner bawaan browser
               '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
             )}
             onKeyDown={handleKeyDown}
@@ -106,27 +103,32 @@ export function CostEditableCell({ id, initialCost }: CostEditableCellProps) {
     );
   }
 
-  // --- MODE DISPLAY ---
+  // --- MODE DISPLAY (DIPERBAIKI) ---
   return (
     <div
       onClick={() => setIsEditing(true)}
       className={cn(
-        'group/cost relative cursor-pointer flex items-center justify-center gap-2 py-1.5 px-2 rounded-lg transition-all',
+        // Tambahkan relative agar icon bisa di-absolute terhadap container ini
+        'group/cost relative cursor-pointer flex items-center justify-end gap-2 py-1.5 px-4 rounded-lg transition-all',
         'hover:bg-white/5 border border-transparent hover:border-white/10'
       )}
     >
       {isLoading ? (
-        <Loader2 className="animate-spin text-gray-500" size={14} />
+        <Loader2 className="animate-spin text-gray-500 mr-2" size={14} />
       ) : (
         <>
-          <span className="text-gray-400 font-mono font-medium text-sm transition-colors group-hover/cost:text-gray-300">
-            {formatRupiah(optimisticCost)}
-          </span>
-
+          {/* 👇 PERUBAHAN DISINI: 
+              1. Icon ditaruh SEBELUM angka.
+              2. Menggunakan absolute left-2 (atau left-4) agar menempel di kiri container.
+          */}
           <PencilLine
             size={12}
-            className="opacity-0 group-hover/cost:opacity-50 text-gray-500 transition-opacity absolute right-2"
+            className="absolute left-4 opacity-0 group-hover/cost:opacity-100 text-gray-500 hover:text-[#dfff4f] transition-all"
           />
+
+          <span className="text-gray-400 font-mono font-medium text-sm transition-colors group-hover/cost:text-gray-200">
+            {formatRupiah(optimisticCost)}
+          </span>
         </>
       )}
     </div>

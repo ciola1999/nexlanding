@@ -17,12 +17,10 @@ import {
   Loader2,
   ShoppingCart,
   PackageOpen,
-  X,
   User,
   Phone, // Pastikan icon ini ada
   Armchair,
   CheckCircle2,
-  Send,
   ArrowRight,
   Utensils,
   ShoppingBag,
