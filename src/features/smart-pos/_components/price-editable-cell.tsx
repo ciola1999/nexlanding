@@ -1,4 +1,3 @@
-// src/features/smart-pos/_components/price-editable-cell.tsx
 'use client';
 
 import {
@@ -9,17 +8,15 @@ import {
   useEffect,
 } from 'react';
 import { updateProductPrice } from '../_actions/smart-price-adjustment';
-import { cn } from '@/lib/utils';
-import { PencilLine, Loader2, Sparkles, Check, X } from 'lucide-react';
+import { cn, formatRupiah } from '@/lib/utils';
+import { PencilLine, Loader2, Sparkles } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface PriceEditableCellProps {
   id: number;
   initialPrice: number;
-  costPrice: number; // Kita butuh HPP untuk menghitung saran harga
+  costPrice: number;
 }
-
-const formatRupiah = (val: number) =>
-  new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(val);
 
 export function PriceEditableCell({
   id,
@@ -30,25 +27,22 @@ export function PriceEditableCell({
   const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // REACT 19: Optimistic UI
-  // UI berubah duluan sebelum server selesai response
+  // Optimistic UI
   const [optimisticPrice, setOptimisticPrice] = useOptimistic(
     initialPrice,
     (state, newPrice: number) => newPrice
   );
 
-  // --- BUSINESS LOGIC: SMART SUGGESTION ---
-  // Target Margin: 30% (Standard Retail)
-  // Rumus: Harga Jual = HPP / (1 - Desimal Margin)
+  // Business Logic: Smart Margin (Hanya untuk perhitungan background)
   const targetMargin = 0.3;
-  const rawSuggestedPrice = costPrice / (1 - targetMargin);
-  // Pembulatan ke atas (kelipatan 100 atau 500 terdekat) untuk psychological pricing
+  const rawSuggestedPrice = costPrice > 0 ? costPrice / (1 - targetMargin) : 0;
   const suggestedPrice = Math.ceil(rawSuggestedPrice / 100) * 100;
 
-  // Cek apakah margin saat ini "Bahaya" (< 10%)
   const currentMargin =
     optimisticPrice > 0 ? (optimisticPrice - costPrice) / optimisticPrice : 0;
+
   const isLowMargin = currentMargin < 0.1;
+  const isHealthyMargin = currentMargin >= 0.3;
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -58,118 +52,119 @@ export function PriceEditableCell({
   }, [isEditing]);
 
   const handleSave = async (val: number) => {
+    if (val < 0) return;
     setIsEditing(false);
-    setIsLoading(true);
+    if (val === initialPrice) return;
 
+    setIsLoading(true);
     startTransition(async () => {
-      setOptimisticPrice(val); // Update layar user DETIK ITU JUGA
-      const result = await updateProductPrice(id, val); // Kirim ke server
+      setOptimisticPrice(val);
+      const result = await updateProductPrice(id, val);
       setIsLoading(false);
 
-      if (!result.success) {
-        // Error handling (bisa tambah toast disini)
-        console.error('Rollback needed');
+      if (result.success) {
+        toast.success(`Harga: ${formatRupiah(val)}`);
+      } else {
+        toast.error('Gagal update');
       }
     });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      const val = parseInt(e.currentTarget.value.replace(/\D/g, ''));
+      const val = parseInt(e.currentTarget.value);
       if (!isNaN(val)) handleSave(val);
     } else if (e.key === 'Escape') {
       setIsEditing(false);
     }
   };
 
-  // Mode EDIT
+  // --- MODE EDIT (CLEAN & MINIMAL) ---
   if (isEditing) {
     return (
-      <div
-        className={cn(
-          'absolute right-0 top-1/2 -translate-y-1/2 z-50',
-          'flex items-center gap-2 p-1.5 min-w-[140px]', // Agak lebih lebar karena ada tombol Auto
-          'bg-[#09090b] border border-[#dfff4f]', // Style 'Active'
-          'rounded-lg shadow-[0_0_20px_rgba(223,255,79,0.15)]',
-          'animate-in zoom-in-95 duration-200'
-        )}
-      >
-        {' '}
-        {/* Tombol AUTO FIX (Hanya muncul jika margin rendah/rugi) */}
-        {isLowMargin && (
-          <button
-            onClick={() => handleSave(suggestedPrice)}
-            className="flex items-center gap-1 text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-1.5 rounded-md hover:bg-emerald-500/20 transition-colors whitespace-nowrap"
-            title={`Set ke ${formatRupiah(suggestedPrice)} (Margin 30%)`}
-          >
-            <Sparkles size={12} />
-            <span>Auto {formatRupiah(suggestedPrice)}</span>
-          </button>
-        )}
-        <div className="relative">
-          <span className="text-gray-500 text-xs font-mono absolute left-2 top-1.5">
-            Rp
-          </span>
-          <input
-            ref={inputRef}
-            type="text"
-            defaultValue={optimisticPrice}
-            className={cn(
-              'w-28 bg-[#0a0a0c] text-white text-right font-mono font-bold text-sm',
-              'pl-7 pr-2 py-1 rounded border border-white/10',
-              'focus:outline-none focus:border-[#dfff4f] focus:ring-1 focus:ring-[#dfff4f]/50'
-            )}
-            onKeyDown={handleKeyDown}
-          />
-        </div>
-        <button
+      <div className="relative flex justify-center min-h-[30px]">
+        {/* Backdrop transparent untuk click outside */}
+        <div
+          className="fixed inset-0 z-40"
           onClick={() => setIsEditing(false)}
-          className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-white"
+        />
+
+        <div
+          className={cn(
+            'absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50',
+            'flex flex-col gap-1 p-1 min-w-[130px]', // Ukuran pas, tidak terlalu lebar
+            'bg-[#121317] border border-[#dfff4f]', // Single Border Neon
+            'rounded-lg shadow-xl shadow-black/50',
+            'animate-in zoom-in-95 duration-150'
+          )}
         >
-          <X size={14} />
-        </button>
+          <div className="relative flex items-center">
+            {/* Label Rp minimalis */}
+            <span className="absolute left-2 text-[#dfff4f]/70 font-mono text-xs pointer-events-none">
+              Rp
+            </span>
+
+            <input
+              ref={inputRef}
+              type="number"
+              defaultValue={optimisticPrice}
+              className={cn(
+                'w-full bg-transparent text-white text-right font-mono font-bold text-sm',
+                'pl-8 pr-2 py-1.5',
+                'outline-none border-none ring-0', // Hapus border input bawaan
+                '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
+              )}
+              onKeyDown={handleKeyDown}
+            />
+          </div>
+
+          {/* Tombol Auto Fix: Muncul kecil saja jika perlu */}
+          {costPrice > 0 && isLowMargin && (
+            <button
+              onClick={() => handleSave(suggestedPrice)}
+              className="flex items-center justify-center gap-1.5 text-[10px] bg-[#dfff4f]/10 text-[#dfff4f] py-1 rounded hover:bg-[#dfff4f]/20 transition-colors w-full"
+              title={`Saran Harga: ${formatRupiah(suggestedPrice)}`}
+            >
+              <Sparkles size={10} />
+              <span>Fix: {formatRupiah(suggestedPrice)}</span>
+            </button>
+          )}
+        </div>
       </div>
     );
   }
 
-  // Mode DISPLAY
+  // --- MODE DISPLAY ---
   return (
     <div
       onClick={() => setIsEditing(true)}
       className={cn(
-        'group/price relative cursor-pointer px-3 py-1.5 -mr-3 rounded-lg transition-all duration-200',
-        'hover:bg-white/[0.08] flex items-center justify-end gap-2 border border-transparent hover:border-white/5'
+        'group/price relative cursor-pointer flex items-center justify-end gap-2 py-1.5 px-2 rounded-lg transition-all',
+        'hover:bg-white/5 border border-transparent hover:border-white/10'
       )}
     >
-      {/* Loading Indicator */}
-      {isLoading && (
-        <Loader2 className="animate-spin text-[#dfff4f]" size={12} />
-      )}
-
-      {/* Harga Display */}
-      <span
-        className={cn(
-          'text-sm font-bold font-mono tracking-tight transition-colors',
-          isLoading ? 'text-[#dfff4f]' : 'text-white'
-        )}
-      >
-        {formatRupiah(optimisticPrice)}
-      </span>
-
-      {/* Indikator Edit (Pensil) */}
-      <PencilLine
-        size={12}
-        className="opacity-0 group-hover/price:opacity-50 text-gray-400 transition-opacity"
-      />
-
-      {/* Indikator Peringatan (Jika Margin Tipis/Rugi) tapi tidak sedang loading */}
-      {!isLoading && isLowMargin && (
-        <div className="absolute -top-1 -right-1">
-          <span className="flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+      {isLoading ? (
+        <Loader2 className="animate-spin text-[#dfff4f]" size={14} />
+      ) : (
+        <>
+          <span
+            className={cn(
+              'font-mono font-medium text-sm transition-colors text-right',
+              isLowMargin
+                ? 'text-orange-400'
+                : isHealthyMargin
+                ? 'text-[#dfff4f]'
+                : 'text-gray-300'
+            )}
+          >
+            {formatRupiah(optimisticPrice)}
           </span>
-        </div>
+
+          <PencilLine
+            size={12}
+            className="opacity-0 group-hover/price:opacity-50 text-gray-500 transition-opacity absolute right-full mr-1"
+          />
+        </>
       )}
     </div>
   );

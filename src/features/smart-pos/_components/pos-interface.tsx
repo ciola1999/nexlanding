@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useTransition, useEffect, useRef } from 'react';
 import { Product, CartItem } from '@/types';
-import { Order } from '@/features/smart-pos/db/schema'; // Import tipe Order dari schema
+import { Order } from '@/features/smart-pos/db/schema';
 import { formatRupiah, cn } from '@/lib/utils';
 import {
   Trash2,
@@ -30,9 +30,9 @@ import { toast } from 'sonner';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 
 // --- TYPE DEFINITIONS UTAMA ---
-// Kita gabungkan data Order dari DB dengan Snapshot Cart Items untuk ditampilkan di struk
 interface SuccessData {
   order: Order;
   items: CartItem[];
@@ -43,6 +43,7 @@ interface POSInterfaceProps {
 }
 
 export default function POSInterface({ initialProducts }: POSInterfaceProps) {
+  const router = useRouter(); // <--- Inisialisasi Router
   // --- STATE ---
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -51,30 +52,137 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
 
   // Modal Checkout State
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
-  // --- UPDATE 1: Update State Form ---
   const [customerForm, setCustomerForm] = useState({
     tableNumber: '',
     customerName: '',
     customerPhone: '',
-    // Tambahkan default value
     orderType: 'dine_in' as 'dine_in' | 'take_away',
     paymentMethod: 'cash' as 'cash' | 'transfer',
   });
 
-  // STATE BARU: Menyimpan data sukses untuk Modal & Struk
+  // Data Sukses
   const [successData, setSuccessData] = useState<SuccessData | null>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // --- MEMO & EFFECTS ---
-  const filteredProducts = useMemo(() => {
-    return initialProducts.filter(
-      (p) =>
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (p.sku && p.sku.toLowerCase().includes(searchQuery.toLowerCase()))
-    );
-  }, [initialProducts, searchQuery]);
+  // --- SHORTCUTS KEYBOARD ---
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F2') {
+        e.preventDefault();
+        const searchInput = document.querySelector(
+          'input[name="searchProduct"]'
+        ) as HTMLInputElement;
+        searchInput?.focus();
+      }
 
+      if (e.key === 'F9' && cart.length > 0) {
+        e.preventDefault();
+        setIsCheckoutOpen(true);
+      }
+
+      if (e.key === 'Escape') {
+        setIsCheckoutOpen(false);
+        setSuccessData(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [cart.length]);
+
+  // --- DEBOUNCE SEARCH ---
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // ------------------------------------------------------------------
+  // FITUR 1: AUTO REFRESH DATA (Setiap 10 Detik)
+  // ------------------------------------------------------------------
+  // Tujuannya: Mengambil data terbaru (Active/Inactive/Stok) dari server
+  // tanpa mengganggu kasir yang sedang input.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      startTransition(() => {
+        router.refresh();
+      });
+    }, 10000); // 10000 ms = 10 detik
+
+    return () => clearInterval(interval);
+  }, [router]);
+
+  // ------------------------------------------------------------------
+  // FITUR 2: CART VALIDATOR (Polisi Keranjang)
+  // ------------------------------------------------------------------
+  // Setiap kali data 'initialProducts' berubah (karena auto refresh di atas),
+  // kita cek apakah barang di keranjang masih valid (Active).
+  // ------------------------------------------------------------------
+  // FITUR 2: CART VALIDATOR (Polisi Keranjang - FIXED)
+  // ------------------------------------------------------------------
+  useEffect(() => {
+    if (cart.length === 0) return;
+
+    // FIX 1: Gunakan 'const' untuk array, karena kita hanya push isinya, bukan ganti variabelnya
+    const itemsRemoved: string[] = [];
+
+    const validCart = cart.filter((cartItem) => {
+      const freshProductData = initialProducts.find(
+        (p) => p.id === cartItem.id
+      );
+
+      if (!freshProductData || !freshProductData.isActive) {
+        itemsRemoved.push(cartItem.name);
+        return false;
+      }
+      return true;
+    });
+
+    // Jika ada perubahan (ada item yang harus dibuang)
+    if (validCart.length !== cart.length) {
+      // FIX 2: Bungkus dengan setTimeout(...)
+      // Ini membuat update state menjadi 'Asynchronous' dan menghilangkan error 'Cascading Renders'
+      setTimeout(() => {
+        setCart(validCart);
+
+        toast.error('Produk Tidak Tersedia!', {
+          description: `${itemsRemoved.join(
+            ', '
+          )} telah dinonaktifkan admin dan dihapus dari keranjang.`,
+          duration: 5000,
+          icon: <X className="text-red-500" />,
+        });
+      }, 0);
+    }
+  }, [initialProducts, cart]);
+
+  const filteredProducts = useMemo(() => {
+    return initialProducts.filter((p) => {
+      // ----------------------------------------------------
+      // LANGKAH 1: FILTER STATUS ("SATPAM")
+      // ----------------------------------------------------
+      // Jika statusnya false (mati) atau null, langsung tolak!
+      // Produk ini tidak akan diperiksa nama/sku-nya lagi.
+      if (!p.isActive) return false;
+
+      // ----------------------------------------------------
+      // LANGKAH 2: FILTER PENCARIAN (NAMA / SKU)
+      // ----------------------------------------------------
+      // Jika lolos langkah 1 (status aktif), baru kita cek pencarian.
+      // Kita gunakan 'debouncedSearch' sesuai kodingan kamu.
+      const query = debouncedSearch.toLowerCase();
+
+      return (
+        p.name.toLowerCase().includes(query) ||
+        (p.sku && p.sku.toLowerCase().includes(query))
+      );
+    });
+  }, [initialProducts, debouncedSearch]);
+
+  // --- GSAP ANIMATION ---
   useGSAP(
     () => {
       if (filteredProducts.length > 0) {
@@ -88,6 +196,7 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     { dependencies: [filteredProducts], scope: containerRef }
   );
 
+  // --- LOCAL STORAGE INIT ---
   useEffect(() => {
     const timer = setTimeout(() => {
       if (typeof window !== 'undefined') {
@@ -116,6 +225,13 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
   const addToCart = (product: Product) => {
     setCart((prev) => {
       const existing = prev.find((item) => item.id === product.id);
+      const currentQty = existing ? existing.quantity : 0;
+
+      if (currentQty + 1 > product.stock) {
+        toast.error(`Stok tidak cukup! Sisa hanya ${product.stock}`);
+        return prev;
+      }
+
       if (existing) {
         toast.info(`+1 ${product.name}`);
         return prev.map((item) =>
@@ -124,37 +240,42 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
             : item
         );
       }
+
+      // Animasi feedback visual sederhana bisa ditambahkan disini
       toast.success(`${product.name} ditambahkan`);
       return [...prev, { ...product, quantity: 1 }];
     });
   };
 
   const updateQuantity = (productId: number, delta: number) => {
-    setCart((prev) =>
-      prev
+    setCart((prev) => {
+      return prev
         .map((item) => {
-          if (item.id === productId)
-            return { ...item, quantity: Math.max(0, item.quantity + delta) };
+          if (item.id === productId) {
+            const newQty = item.quantity + delta;
+            const productInfo = initialProducts.find((p) => p.id === productId);
+
+            if (delta > 0 && productInfo && newQty > productInfo.stock) {
+              toast.error(`Maksimal stok: ${productInfo.stock}`);
+              return item;
+            }
+
+            return { ...item, quantity: Math.max(0, newQty) };
+          }
           return item;
         })
-        .filter((item) => item.quantity > 0)
-    );
+        .filter((item) => item.quantity > 0);
+    });
   };
 
   const handleManualQuantity = (itemId: number, valueStr: string) => {
-    // 1. Cek jika input kosong (saat user baru hapus angka) biarkan dulu
     if (valueStr === '') return;
-
     const newValue = parseInt(valueStr);
-
-    // 2. Cek apakah angka valid
     if (isNaN(newValue) || newValue < 1) return;
 
-    // 3. Cek stok tersedia
     const itemInCart = cart.find((item) => item.id === itemId);
     if (itemInCart && newValue > itemInCart.stock) {
       toast.error(`Stok tidak cukup! Sisa stok: ${itemInCart.stock}`);
-      // Set ke max stok
       setCart((prev) =>
         prev.map((item) =>
           item.id === itemId ? { ...item, quantity: itemInCart.stock } : item
@@ -163,7 +284,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
       return;
     }
 
-    // 4. Update cart
     setCart((prev) =>
       prev.map((item) =>
         item.id === itemId ? { ...item, quantity: newValue } : item
@@ -173,10 +293,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
 
   const removeFromCart = (productId: number) =>
     setCart((prev) => prev.filter((item) => item.id !== productId));
-  const clearCart = () => {
-    setCart([]);
-    toast.warning('Keranjang dikosongkan');
-  };
 
   const subtotal = useMemo(() => {
     return cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
@@ -187,13 +303,11 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     setCustomerForm({ ...customerForm, [e.target.name]: e.target.value });
   };
 
-  // --- UPDATE 2: Handle Change Khusus untuk Radio/Select ---
   const handleValueChange = (field: string, value: string) => {
     setCustomerForm((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleFinalPayment = () => {
-    // Validasi conditional: Table Number hanya wajib jika Dine In
     if (
       customerForm.orderType === 'dine_in' &&
       !customerForm.tableNumber.trim()
@@ -205,25 +319,21 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     const currentCartSnapshot = [...cart];
 
     startTransition(async () => {
-      // ... (mapping items tetap sama) ...
       const checkoutItems = currentCartSnapshot.map((item) => ({
         id: item.id,
         quantity: item.quantity,
         price: item.price,
       }));
 
-      // Kirim customerForm lengkap (termasuk orderType & paymentMethod)
       const result = await processCheckout(checkoutItems, customerForm);
 
       if (result.success && result.data) {
-        // ... (Logic sukses tetap sama) ...
         setSuccessData({
           order: result.data,
           items: currentCartSnapshot,
         });
         setCart([]);
         setIsCheckoutOpen(false);
-        // Reset form ke default
         setCustomerForm({
           tableNumber: '',
           customerName: '',
@@ -238,37 +348,32 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     });
   };
 
-  // --- ACTIONS: PRINT & WA ---
-  const handlePrint = () => {
-    window.print();
-  };
+  // --- PRINT & WA ---
+  const handlePrint = () => window.print();
 
   const handleSendWhatsApp = () => {
     if (!successData) return;
     const { order, items } = successData;
 
-    // Format Pesan WA
-    let message = `*NEXLANDING POS*\n`;
-    message += `--------------------------------\n`;
+    let message = `*NEXLANDING POS*\n--------------------------------\n`;
     message += `No. Antrian: *${order.queueNumber}*\n`;
-    message += `Meja: ${order.tableNumber}\n`;
-    message += `Pelanggan: ${order.customerName || 'Guest'}\n`;
+    message += `Meja: ${order.tableNumber}\nPelanggan: ${
+      order.customerName || 'Guest'
+    }\n`;
     message += `--------------------------------\n`;
 
     items.forEach((item) => {
-      message += `${item.quantity}x ${item.name}\n`;
-      message += `@ ${formatRupiah(item.price)}\n`;
+      message += `${item.quantity}x ${item.name}\n@ ${formatRupiah(
+        item.price
+      )}\n`;
     });
 
-    message += `--------------------------------\n`;
-    message += `*TOTAL: ${formatRupiah(order.totalAmount)}*\n`;
-    message += `--------------------------------\n`;
-    message += `Terima kasih!`;
+    message += `--------------------------------\n*TOTAL: ${formatRupiah(
+      order.totalAmount
+    )}*\n--------------------------------\nTerima kasih!`;
 
     const encodedMessage = encodeURIComponent(message);
-
-    // Logic Redirect WA
-    let phoneUrl = `https://wa.me/?text=${encodedMessage}`; // Default (pilih kontak sendiri)
+    let phoneUrl = `https://wa.me/?text=${encodedMessage}`;
 
     if (order.customerPhone) {
       let phone = order.customerPhone.replace(/\D/g, '');
@@ -288,13 +393,13 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
   }
 
   return (
+    // ✨ LAYOUT FIX 1: Menggunakan h-[calc(100vh-theme(spacing.8))] untuk memastikan
+    // kontainer pas di layar (asumsi ada padding 4/1rem di parent page)
     <div
       ref={containerRef}
-      className="flex flex-col lg:flex-row h-full gap-6 relative"
+      className="flex flex-col lg:flex-row h-[calc(100vh-2rem)] gap-4 relative overflow-hidden"
     >
-      {/* ========================================================= */}
-      {/* STRUK THERMAL (HIDDEN ON SCREEN, VISIBLE ON PRINT)       */}
-      {/* ========================================================= */}
+      {/* ======================= STRUK THERMAL (Hidden) ======================= */}
       {successData && (
         <div className="hidden print:block print:w-[58mm] print:text-black print:bg-white print:absolute print:top-0 print:left-0 print:z-[9999]">
           <div className="p-2 text-xs font-mono">
@@ -302,12 +407,10 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
               <h1 className="text-lg font-bold">NEXLANDING</h1>
               <p>Smart POS System</p>
             </div>
-
             <div className="border-b border-black border-dashed my-2"></div>
-
+            {/* ... Content Struk Sama ... */}
             <div className="flex justify-between">
               <span>Date:</span>
-              {/* Menggunakan createdAt dari DB yang berupa Date object */}
               <span>
                 {successData.order.createdAt
                   ? new Date(successData.order.createdAt).toLocaleDateString()
@@ -322,16 +425,13 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
               <span>Table:</span>
               <span>{successData.order.tableNumber}</span>
             </div>
-
             <div className="text-center my-4 border-2 border-black py-2 rounded">
               <span className="block text-sm">Nomor Antrian</span>
               <span className="text-3xl font-bold">
                 {successData.order.queueNumber}
               </span>
             </div>
-
             <div className="border-b border-black border-dashed my-2"></div>
-
             {successData.items.map((item, idx) => (
               <div key={idx} className="mb-1">
                 <div>{item.name}</div>
@@ -343,14 +443,11 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                 </div>
               </div>
             ))}
-
             <div className="border-b border-black border-dashed my-2"></div>
-
             <div className="flex justify-between font-bold text-sm">
               <span>TOTAL</span>
               <span>{formatRupiah(successData.order.totalAmount)}</span>
             </div>
-
             <div className="text-center mt-4 mb-8">
               <p>Terima Kasih</p>
             </div>
@@ -358,13 +455,12 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
         </div>
       )}
 
-      {/* ========================================================= */}
-      {/* MODAL SUCCESS (GLASSMORPHISM)                             */}
-      {/* ========================================================= */}
+      {/* ======================= MODAL SUCCESS ======================= */}
       {successData && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-300 print:hidden">
+          {/* ... Modal Content Sama ... */}
           <div className="bg-[#1e1f24] border border-[#dfff4f]/20 w-full max-w-sm rounded-3xl shadow-[0_0_50px_rgba(223,255,79,0.1)] p-8 text-center relative overflow-hidden">
-            {/* Decoration BG */}
+            {/* Background Effects */}
             <div className="absolute -top-10 -right-10 w-32 h-32 bg-[#dfff4f]/10 rounded-full blur-3xl"></div>
             <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-[#dfff4f]/10 rounded-full blur-3xl"></div>
 
@@ -379,7 +475,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
               Order #{successData.order.id} telah masuk antrian.
             </p>
 
-            {/* Queue Number Display */}
             <div className="bg-black/30 border border-white/10 rounded-2xl p-4 mb-6">
               <p className="text-xs uppercase text-gray-500 font-bold mb-1">
                 Nomor Antrian
@@ -389,7 +484,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
               </p>
             </div>
 
-            {/* Action Buttons */}
             <div className="space-y-3">
               <button
                 onClick={handlePrint}
@@ -418,11 +512,10 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
         </div>
       )}
 
-      {/* ========================================================= */}
-      {/* MODAL CHECKOUT FORM (NO-DEPENDENCY VERSION)               */}
-      {/* ========================================================= */}
+      {/* ======================= MODAL CHECKOUT ======================= */}
       {isCheckoutOpen && !successData && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 rounded-3xl animate-in fade-in duration-200 print:hidden">
+          {/* ... Modal Checkout Content Sama ... */}
           <div className="bg-[#1e1f24] border border-white/10 w-full max-w-md rounded-2xl shadow-2xl p-6 overflow-y-auto max-h-[90vh] custom-scrollbar">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-white">Info Pesanan</h3>
@@ -435,27 +528,24 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
             </div>
 
             <div className="space-y-6">
-              {/* --- 1. TIPE PESANAN (Custom Radio Manual) --- */}
+              {/* TIPE PESANAN */}
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase mb-3 block ml-1">
                   Tipe Pesanan
                 </label>
                 <div className="grid grid-cols-2 gap-3">
-                  {/* Tombol Dine In */}
                   <div
                     onClick={() => handleValueChange('orderType', 'dine_in')}
                     className={cn(
                       'flex flex-col items-center justify-between rounded-xl border-2 p-4 cursor-pointer transition-all',
                       customerForm.orderType === 'dine_in'
-                        ? 'border-[#dfff4f] text-[#dfff4f] bg-white/5' // Active State
-                        : 'border-white/10 bg-transparent text-gray-400 hover:bg-white/5 hover:text-white' // Inactive State
+                        ? 'border-[#dfff4f] text-[#dfff4f] bg-white/5'
+                        : 'border-white/10 bg-transparent text-gray-400 hover:bg-white/5 hover:text-white'
                     )}
                   >
                     <Utensils className="mb-2 h-6 w-6" />
                     <span className="font-bold">Dine In</span>
                   </div>
-
-                  {/* Tombol Take Away */}
                   <div
                     onClick={() => handleValueChange('orderType', 'take_away')}
                     className={cn(
@@ -471,9 +561,8 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                 </div>
               </div>
 
-              {/* --- 2. FORM INPUTS --- */}
+              {/* FORM INPUTS */}
               <div className="space-y-4">
-                {/* Conditional Rendering: Nomor Meja hanya muncul jika Dine In */}
                 {customerForm.orderType === 'dine_in' && (
                   <div className="animate-in slide-in-from-top-2 fade-in duration-300">
                     <label className="block text-xs font-bold text-[#dfff4f] uppercase mb-1 ml-1">
@@ -495,7 +584,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                   </div>
                 )}
 
-                {/* Nama Pemesan */}
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">
                     Nama Pemesan
@@ -515,7 +603,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                   </div>
                 </div>
 
-                {/* WhatsApp (Optional) */}
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">
                     WhatsApp (Opsional)
@@ -536,27 +623,24 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                 </div>
               </div>
 
-              {/* --- 3. METODE PEMBAYARAN (Custom Radio Manual) --- */}
+              {/* METODE PEMBAYARAN */}
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase mb-3 block ml-1">
                   Metode Pembayaran
                 </label>
                 <div className="grid grid-cols-2 gap-3">
-                  {/* Cash */}
                   <div
                     onClick={() => handleValueChange('paymentMethod', 'cash')}
                     className={cn(
                       'flex items-center justify-center gap-2 rounded-xl border p-3 cursor-pointer transition-all',
                       customerForm.paymentMethod === 'cash'
-                        ? 'bg-[#dfff4f] text-black border-[#dfff4f] font-bold' // Active (Tombol Solid)
-                        : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10' // Inactive
+                        ? 'bg-[#dfff4f] text-black border-[#dfff4f] font-bold'
+                        : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
                     )}
                   >
                     <Banknote size={18} />
                     <span>Cash</span>
                   </div>
-
-                  {/* Transfer */}
                   <div
                     onClick={() =>
                       handleValueChange('paymentMethod', 'transfer')
@@ -575,7 +659,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
               </div>
             </div>
 
-            {/* Footer Modal: Total & Tombol Aksi */}
             <div className="mt-8 pt-4 border-t border-white/10">
               <div className="flex justify-between items-center mb-6">
                 <span className="text-gray-400">Total Pembayaran</span>
@@ -604,9 +687,10 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
         </div>
       )}
 
-      {/* --- BAGIAN KIRI: DAFTAR PRODUK (SAMA, TAMBAH CLASS print:hidden) --- */}
-      <div className="flex-1 flex flex-col gap-6 overflow-hidden print:hidden">
-        <div className="relative group">
+      {/* --- BAGIAN KIRI: DAFTAR PRODUK (GRID FIX) --- */}
+      <div className="flex-1 flex flex-col gap-4 overflow-hidden print:hidden">
+        {/* Search Bar */}
+        <div className="relative group shrink-0">
           <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
             <Search
               className="text-gray-500 group-focus-within:text-[#dfff4f] transition-colors"
@@ -614,93 +698,98 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
             />
           </div>
           <input
+            name="searchProduct"
             type="text"
-            placeholder="Cari nama produk atau scan SKU..."
-            className="w-full pl-12 pr-4 py-3 bg-[#18191e] border border-white/10 rounded-2xl text-white placeholder:text-gray-600 focus:outline-none focus:border-[#dfff4f]/50 focus:ring-1 focus:ring-[#dfff4f]/50 transition-all shadow-lg"
+            placeholder="Cari nama produk atau scan SKU... (F2)"
+            className="w-full pl-12 pr-4 py-4 bg-[#18191e] border border-white/10 rounded-2xl text-white placeholder:text-gray-600 focus:outline-none focus:border-[#dfff4f]/50 focus:ring-1 focus:ring-[#dfff4f]/50 transition-all shadow-lg"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             autoFocus
           />
         </div>
 
+        {/* Product Grid Area */}
         <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
           {filteredProducts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-64 text-gray-600 gap-4">
+            <div className="flex flex-col items-center justify-center h-[50vh] text-gray-600 gap-4">
               <PackageOpen size={64} strokeWidth={1} />
               <p>Produk tidak ditemukan</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 pb-20">
+            // ✨ LAYOUT FIX 2: Responsive Grid yang lebih presisi
+            // grid-cols-2 (Mobile)
+            // sm:grid-cols-3 (Tablet Kecil)
+            // lg:grid-cols-3 (Desktop dgn Sidebar - space berkurang jadi kolom diturunkan)
+            // xl:grid-cols-4 (Desktop Besar)
+            // 2xl:grid-cols-5 (Monitor Ultra Wide)
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 pb-20">
               {filteredProducts.map((product) => (
                 <button
                   key={product.id}
                   onClick={(e) => {
-                    // 1. Cek stok dulu
                     if (product.stock > 0) {
-                      e.stopPropagation(); // Stop event bubbling (opsional, tergantung kebutuhan)
-                      addToCart(product); // Baru jalankan ini
+                      e.stopPropagation();
+                      addToCart(product);
                     }
                   }}
                   className={cn(
-                    'group relative flex flex-col justify-between bg-[#18191e] border border-white/5 rounded-2xl p-4 hover:border-[#dfff4f]/50 transition-all duration-300 hover:shadow-[0_0_20px_rgba(223,255,79,0.1)] text-left overflow-hidden'
+                    // ✨ LAYOUT FIX 3: Flex-col & h-full agar semua kartu tingginya sama
+                    'product-card group relative flex flex-col gap-3 bg-[#18191e] p-3 rounded-2xl hover:bg-white/5 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 border border-transparent hover:border-white/10 text-left h-full',
+                    product.stock === 0 &&
+                      'opacity-50 grayscale cursor-not-allowed'
                   )}
                 >
-                  {/* --- BAGIAN 1: GAMBAR --- */}
-                  <div className="relative w-full h-32 mb-3 rounded-xl overflow-hidden bg-white/5 flex items-center justify-center">
+                  <div className="relative w-full aspect-[4/3] rounded-xl overflow-hidden bg-white/5 shrink-0">
                     {product.imageUrl ? (
                       <Image
                         src={product.imageUrl}
                         alt={product.name}
                         fill
-                        className="object-cover group-hover:scale-110 transition-transform duration-500"
+                        className="object-cover group-hover:scale-110 transition-transform duration-700 ease-out"
                         sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                       />
                     ) : (
-                      <PackageOpen
-                        className="text-gray-600 group-hover:text-[#dfff4f] transition-colors"
-                        size={32}
-                      />
+                      <div className="w-full h-full flex items-center justify-center text-gray-600">
+                        <PackageOpen size={32} />
+                      </div>
                     )}
 
-                    {/* LOGIC A: Badge Merah di Gambar (Hanya kalau Stok < 10) */}
-                    {product.stock < 10 && (
-                      <div className="absolute top-2 right-2 bg-red-500/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm backdrop-blur-sm z-10 animate-pulse">
+                    {product.stock > 0 && product.stock < 10 && (
+                      <div className="absolute top-2 right-2 bg-red-500/90 text-white text-[10px] font-bold px-2 py-1 rounded-md backdrop-blur-sm shadow-sm">
                         Sisa {product.stock}
+                      </div>
+                    )}
+
+                    {product.stock === 0 && (
+                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                        <span className="text-white font-bold text-sm bg-red-600 px-3 py-1 rounded-full">
+                          HABIS
+                        </span>
                       </div>
                     )}
                   </div>
 
-                  {/* --- BAGIAN 2: INFO TEXT --- */}
-                  <div>
-                    {/* Wrapper Flex untuk Nama & Stok Aman */}
-                    <div className="flex justify-between items-start gap-2 mb-1">
-                      {/* Nama Produk */}
-                      <h3
-                        className="font-bold text-white line-clamp-1 group-hover:text-[#dfff4f] transition-colors flex-1"
-                        title={product.name}
-                      >
+                  {/* Wrapper Content: Flex-1 push footer to bottom */}
+                  <div className="flex flex-col justify-between flex-1 w-full">
+                    <div>
+                      <h3 className="text-gray-200 font-medium text-sm leading-snug line-clamp-2 mb-1">
                         {product.name}
                       </h3>
-
-                      {/* LOGIC B: Badge Biasa di Samping Nama (Hanya kalau Stok >= 10) */}
-                      {product.stock >= 10 && (
-                        <span className="text-[10px] font-mono text-gray-500 bg-white/5 px-1.5 py-0.5 rounded border border-white/5 shrink-0 whitespace-nowrap group-hover:bg-[#dfff4f]/10 group-hover:text-[#dfff4f] group-hover:border-[#dfff4f]/20 transition-colors">
-                          Stok: {product.stock}
-                        </span>
-                      )}
+                      <p className="text-xs text-gray-500">
+                        {formatRupiah(Number(product.costPrice))}
+                      </p>
                     </div>
 
-                    <p className="text-xs text-gray-500 mb-2 font-mono">
-                      {product.sku || 'NO-SKU'}
-                    </p>
-
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-[#dfff4f] font-mono">
+                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/5">
+                      <span className="text-[#dfff4f] font-bold font-mono text-sm">
                         {formatRupiah(product.price)}
                       </span>
-                      <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-[#dfff4f] group-hover:text-black transition-colors">
-                        <Plus size={16} />
-                      </div>
+
+                      {product.stock > 0 && (
+                        <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white group-hover:bg-[#dfff4f] group-hover:text-black transition-all shadow-lg">
+                          <Plus size={16} strokeWidth={3} />
+                        </div>
+                      )}
                     </div>
                   </div>
                 </button>
@@ -710,10 +799,12 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
         </div>
       </div>
 
-      {/* --- BAGIAN KANAN: KERANJANG (SAMA, TAMBAH CLASS print:hidden) --- */}
-      <div className="w-full lg:w-[400px] flex flex-col h-[calc(100vh-140px)] sticky top-4 print:hidden">
+      {/* --- BAGIAN KANAN: KERANJANG (SIDEBAR FIX) --- */}
+      {/* ✨ LAYOUT FIX 4: Gunakan h-full pada flex container, bukan h-calc manual */}
+      <div className="w-full lg:w-[380px] xl:w-[420px] flex-shrink-0 flex flex-col h-full print:hidden">
         <div className="bg-[#18191e] border border-white/5 rounded-3xl shadow-2xl flex flex-col h-full overflow-hidden">
-          <div className="p-5 border-b border-white/5 bg-[#18191e] flex justify-between items-center z-10">
+          {/* Header Cart */}
+          <div className="p-5 border-b border-white/5 bg-[#18191e] flex justify-between items-center shrink-0">
             <div className="flex items-center gap-2">
               <ShoppingCart className="text-[#dfff4f]" size={20} />
               <h2 className="font-bold text-white">Current Order</h2>
@@ -723,57 +814,56 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
             </span>
           </div>
 
+          {/* List Item Cart (Scrollable) */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
             {cart.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-gray-600 gap-3 opacity-50">
                 <ShoppingCart size={48} strokeWidth={1} />
-                <p className="text-sm">Keranjang kosong</p>
+                <p className="text-sm">Keranjang kosong (F2 untuk cari)</p>
               </div>
             ) : (
               cart.map((item) => (
                 <div
                   key={item.id}
-                  className="group flex gap-3 bg-white/5 hover:bg-white/[0.07] p-3 rounded-2xl transition-all border border-transparent hover:border-white/10"
+                  className="group flex gap-3 bg-white/5 hover:bg-white/[0.07] p-3 rounded-2xl transition-all border border-transparent hover:border-white/10 shrink-0"
                 >
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-white line-clamp-1">
+                  <div className="flex-1 min-w-0">
+                    {' '}
+                    {/* min-w-0 penting untuk truncate text di flex child */}
+                    <p className="text-sm font-medium text-white truncate">
                       {item.name}
                     </p>
                     <p className="text-xs text-[#dfff4f] font-mono mt-1">
                       {formatRupiah(item.price)}
                     </p>
                   </div>
-                  <div className="flex items-center gap-3 bg-black/20 rounded-xl px-2 py-1 h-fit self-center">
+
+                  {/* Qty Controls */}
+                  <div className="flex items-center gap-2 bg-black/20 rounded-xl px-2 py-1 h-9 self-center">
                     <button
                       onClick={() => updateQuantity(item.id, -1)}
-                      className="text-gray-400 hover:text-white transition-colors"
+                      className="w-6 h-full flex items-center justify-center text-gray-400 hover:text-white transition-colors"
                     >
                       <Minus size={14} />
                     </button>
                     <input
-                      type="number"
-                      min="1"
-                      value={item.quantity} // Pastikan value ambil dari state
+                      type="text" // Ubah ke text agar tidak ada panah spinner default
+                      value={item.quantity}
                       onChange={(e) =>
                         handleManualQuantity(item.id, e.target.value)
                       }
-                      className="w-12 text-center bg-transparent text-white font-mono font-bold text-sm focus:outline-none focus:bg-white/10 rounded [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      className="w-8 text-center bg-transparent text-white font-mono font-bold text-sm focus:outline-none focus:bg-white/10 rounded"
                     />
-                    {/* Note CSS di atas:
-   - w-12: lebar input
-   - bg-transparent: biar nyatu sama background
-   - [appearance:textfield] dst: Menyembunyikan panah up/down bawaan browser biar rapi
-*/}
                     <button
                       onClick={() => updateQuantity(item.id, 1)}
-                      className="text-gray-400 hover:text-white transition-colors"
+                      className="w-6 h-full flex items-center justify-center text-gray-400 hover:text-white transition-colors"
                     >
                       <Plus size={14} />
                     </button>
                   </div>
                   <button
                     onClick={() => removeFromCart(item.id)}
-                    className="text-gray-600 hover:text-red-500 transition-colors p-1"
+                    className="text-gray-600 hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-white/5"
                   >
                     <Trash2 size={16} />
                   </button>
@@ -782,42 +872,30 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
             )}
           </div>
 
-          <div className="p-5 bg-[#121317] border-t border-white/5 space-y-4">
+          {/* Footer Cart (Sticky Bottom di dalam Container) */}
+          <div className="p-5 bg-[#121317] border-t border-white/5 space-y-4 shrink-0">
             <div className="space-y-2">
               <div className="flex justify-between text-sm text-gray-400">
                 <span>Subtotal</span>
                 <span>{formatRupiah(subtotal)}</span>
               </div>
-              <div className="flex justify-between text-sm text-gray-400">
-                <span>Tax (0%)</span>
-                <span>Rp 0</span>
-              </div>
-              <div className="flex justify-between text-lg font-bold text-white pt-2 border-t border-white/5">
+              <div className="flex justify-between text-lg font-bold text-white">
                 <span>Total</span>
                 <span className="text-[#dfff4f]">{formatRupiah(subtotal)}</span>
               </div>
             </div>
 
-            <div className="grid grid-cols-4 gap-3 pt-2">
-              <button
-                onClick={clearCart}
-                disabled={cart.length === 0 || isPending}
-                className="col-span-1 flex items-center justify-center rounded-xl border border-white/10 text-gray-400 hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/20 transition-all disabled:opacity-30"
-              >
-                <Trash2 size={18} />
-              </button>
-              <button
-                onClick={() => setIsCheckoutOpen(true)}
-                disabled={cart.length === 0 || isPending}
-                className="col-span-3 bg-[#dfff4f] hover:bg-[#ccee3d] text-black font-bold py-3.5 rounded-xl transition-all shadow-[0_0_20px_rgba(223,255,79,0.1)] hover:shadow-[0_0_30px_rgba(223,255,79,0.3)] disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2"
-              >
-                {isPending ? (
-                  <Loader2 className="animate-spin" size={20} />
-                ) : (
-                  'Bayar Sekarang'
-                )}
-              </button>
-            </div>
+            <button
+              onClick={() => setIsCheckoutOpen(true)}
+              disabled={cart.length === 0}
+              className="w-full bg-[#dfff4f] hover:bg-[#ccee3d] disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed text-black font-bold py-4 rounded-xl transition-all shadow-lg hover:shadow-[0_0_20px_rgba(223,255,79,0.2)] flex items-center justify-center gap-2 group"
+            >
+              <span>Bayar (F9)</span>
+              <ArrowRight
+                size={18}
+                className="group-hover:translate-x-1 transition-transform"
+              />
+            </button>
           </div>
         </div>
       </div>

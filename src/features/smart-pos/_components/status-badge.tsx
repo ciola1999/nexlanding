@@ -1,3 +1,5 @@
+// E:\Belajar Javascript\.vscode\Project-Freelance\nexlanding\frontend\src\features\smart-pos\_components\status-badge.tsx
+
 'use client';
 
 import { useEffect, useState } from 'react';
