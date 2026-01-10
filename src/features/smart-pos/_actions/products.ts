@@ -2,7 +2,7 @@
 
 import { db } from '@/db';
 import { products, orderItems, orders } from '@/features/smart-pos/db/schema';
-import { desc } from 'drizzle-orm';
+import { desc, asc, inArray, SQL, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 
@@ -18,6 +18,24 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl!, supabaseAnonKey!);
 
+// --- 1. TYPE GUARD (Penjaga Tipe untuk Error) ---
+// Interface ini mendefinisikan bentuk Error dari Database/Drizzle
+interface DatabaseError {
+  code?: string;
+  cause?: {
+    code?: string;
+  };
+}
+
+// Fungsi pengecek apakah error ini valid Object error
+function isDatabaseError(error: unknown): error is DatabaseError {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    ('code' in error || 'cause' in error)
+  );
+}
+
 export type ActionState = {
   success?: boolean;
   message?: string;
@@ -25,6 +43,114 @@ export type ActionState = {
     [key: string]: string[];
   };
 };
+
+export async function getProducts(
+  sortBy: string = 'createdAt',
+  sortOrder: 'asc' | 'desc' = 'desc'
+) {
+  try {
+    let orderBy: SQL | undefined;
+
+    // Logic Sorting: Memilih kolom berdasarkan input user
+    switch (sortBy) {
+      case 'stock':
+        orderBy =
+          sortOrder === 'asc' ? asc(products.stock) : desc(products.stock);
+        break;
+      case 'price': // Harga Jual
+        orderBy =
+          sortOrder === 'asc' ? asc(products.price) : desc(products.price);
+        break;
+      case 'costPrice': // Harga Pokok (Decimal)
+        // Kita gunakan SQL Cast agar decimal string diurutkan secara numeric, bukan abjad
+        // (Misal: tanpa cast, "100" dianggap lebih kecil dari "2")
+        orderBy =
+          sortOrder === 'asc'
+            ? sql`${products.costPrice}::numeric ASC`
+            : sql`${products.costPrice}::numeric DESC`;
+        break;
+      case 'name':
+        orderBy =
+          sortOrder === 'asc' ? asc(products.name) : desc(products.name);
+        break;
+      case 'createdAt':
+      default:
+        // Default: Urutkan tanggal pembuatan (Terbaru diatas)
+        orderBy =
+          sortOrder === 'asc'
+            ? asc(products.createdAt)
+            : desc(products.createdAt);
+        break;
+    }
+
+    const data = await db.select().from(products).orderBy(orderBy);
+
+    return { success: true, data };
+  } catch (error) {
+    console.error('Get Products Error:', error);
+    return { success: false, data: [] };
+  }
+}
+
+// --- 3. ACTION: Delete Products (SMART DELETE & TYPE SAFE) ---
+export async function deleteProductsAction(ids: number[]) {
+  try {
+    if (ids.length === 0) {
+      return { success: false, message: 'Tidak ada produk dipilih' };
+    }
+
+    // A. COBA HAPUS PERMANEN (HARD DELETE)
+    await db.delete(products).where(inArray(products.id, ids));
+
+    revalidatePath('/projects/smart-pos');
+
+    return {
+      success: true,
+      message: `Berhasil menghapus permanen ${ids.length} produk.`,
+    };
+  } catch (error: unknown) {
+    // Gunakan 'unknown' agar aman
+
+    // B. PENANGANAN ERROR TYPE-SAFE
+    if (isDatabaseError(error)) {
+      // Ambil kode error, baik dari level atas maupun dari wrapper Drizzle (.cause)
+      const errorCode = error.code || error.cause?.code;
+
+      // Code '23503' = Foreign Key Violation (Data dipakai di tabel lain)
+      if (errorCode === '23503') {
+        console.log(
+          'Produk terkunci relasi transaksi. Beralih ke Soft Delete...'
+        );
+
+        try {
+          // C. FALLBACK: SOFT DELETE (ARCHIVE)
+          await db
+            .update(products)
+            .set({ isActive: false })
+            .where(inArray(products.id, ids));
+
+          revalidatePath('/projects/smart-pos');
+
+          return {
+            success: true,
+            message:
+              'Produk memiliki riwayat transaksi. Produk telah DIARSIPKAN (Non-Aktif) agar data aman.',
+          };
+        } catch (updateError) {
+          console.error('Soft Delete Gagal:', updateError);
+          return { success: false, message: 'Gagal mengarsipkan produk.' };
+        }
+      }
+    }
+
+    // Log error lain yang tidak terduga
+    console.error('Delete error (Unknown):', error);
+    return {
+      success: false,
+      message: 'Terjadi kesalahan sistem saat menghapus.',
+    };
+  }
+}
 
 // 1. ACTION: Tambah 1 Product Acak (Dynamic Seeding)
 export async function seedDummyProducts() {
@@ -101,16 +227,6 @@ export async function deleteAllProducts() {
           ? error.message
           : 'Gagal menghapus data karena relasi database.',
     };
-  }
-}
-
-// 3. ACTION: Get Data (Tetap sama)
-export async function getProducts() {
-  try {
-    const data = await db.select().from(products).orderBy(desc(products.id));
-    return { success: true, data };
-  } catch (error) {
-    return { success: false, data: [] };
   }
 }
 

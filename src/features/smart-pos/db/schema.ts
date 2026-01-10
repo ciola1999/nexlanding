@@ -7,6 +7,7 @@ import {
   boolean,
   pgEnum,
   decimal,
+  varchar,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
@@ -18,7 +19,11 @@ export const roleEnum = pgEnum('role', ['admin', 'cashier']);
 
 // --- UPDATE 1: Definisi Enum Baru ---
 export const orderTypeEnum = pgEnum('order_type', ['dine_in', 'take_away']);
-export const paymentMethodEnum = pgEnum('payment_method', ['cash', 'transfer']);
+export const paymentMethodEnum = pgEnum('payment_method', [
+  'cash',
+  'debit',
+  'qris',
+]);
 
 // 2. Tabel Users
 export const users = pgTable('users', {
@@ -67,17 +72,22 @@ export const orders = pgTable('orders', {
   id: serial('id').primaryKey(),
   totalAmount: integer('total_amount').notNull(),
 
-  // Ganti kolom text biasa menjadi Enum
   orderType: orderTypeEnum('order_type').default('dine_in').notNull(),
-  paymentMethod: paymentMethodEnum('payment_method').default('cash').notNull(),
 
-  // Table number sekarang bisa null jika Take Away (opsional, tergantung logic)
+  // UPGRADE DISINI:
+  // Sebelumnya kamu pakai varchar, sekarang kita kunci pakai ENUM.
+  // Ini bikin kode TypeScript kamu 100% Type-Safe (tidak bisa typo 'debit' jadi 'deibt')
+  paymentMethod: paymentMethodEnum('payment_method').notNull().default('cash'),
+
   tableNumber: text('table_number'),
 
   customerName: text('customer_name'),
-  customerPhone: text('customer_phone'),
-  queueNumber: integer('queue_number').notNull().default(1),
 
+  // NOTE: Kolom ini SUDAH ADA, jadi aman untuk fitur WhatsApp nanti.
+  // varchar(20) cukup untuk menampung format +62
+  customerPhone: varchar('customer_phone', { length: 20 }),
+
+  queueNumber: integer('queue_number').notNull().default(1),
   cashierId: integer('cashier_id').references(() => users.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });

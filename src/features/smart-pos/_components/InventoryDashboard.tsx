@@ -7,11 +7,12 @@ import { Package, AlertTriangle, Search, ArrowLeft, Plus } from 'lucide-react';
 import Link from 'next/link';
 
 // IMPORT KOMPONEN MODULAR KITA
+// Pastikan path './product-table' mengarah ke file table baru yang ada fitur Sort/Nuqs
 import ProductTable from './product-table';
 import type { Product } from '@/features/smart-pos/db/schema';
 import SeedButton from './seed-button';
 import ResetButton from './reset-button';
-import ProductForm from './Product-Form'; // Import komponen baru
+import ProductForm from './Product-Form';
 
 interface InventoryDashboardProps {
   products: Product[];
@@ -27,9 +28,12 @@ export default function InventoryDashboard({
   const containerRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // --- 2. STATE UNTUK BUKA/TUTUP FORM ---
+  // --- STATE UNTUK BUKA/TUTUP FORM ---
   const [isFormOpen, setIsFormOpen] = useState(false);
 
+  // LOGIC FILTER
+  // Array.filter mempertahankan urutan. Jadi jika 'products' dari server sudah urut,
+  // maka 'filteredProducts' juga akan tetap urut (Sorted). Aman! ✅
   const filteredProducts = products.filter(
     (p) =>
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -120,7 +124,7 @@ export default function InventoryDashboard({
           </div>
         </div>
 
-        {/* Card 3: Actions (Menggunakan Komponen Terpisah) */}
+        {/* Card 3: Actions */}
         <div className="stat-card bg-[#18191e] border border-white/5 p-6 rounded-2xl flex flex-col justify-between shadow-lg">
           <h3 className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-3">
             Database Actions
@@ -156,7 +160,7 @@ export default function InventoryDashboard({
             className="w-full bg-[#18191e] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#dfff4f]/50 focus:ring-1 focus:ring-[#dfff4f]/50 transition-all placeholder:text-gray-600 shadow-inner"
           />
 
-          {/* TOMBOL BARU */}
+          {/* TOMBOL TAMBAH */}
           <button
             onClick={() => setIsFormOpen(true)}
             className="bg-[#dfff4f] hover:bg-[#ccee2e] text-black px-4 py-2.5 rounded-xl text-sm font-bold transition flex items-center gap-2"
@@ -167,12 +171,17 @@ export default function InventoryDashboard({
         </div>
       </div>
 
-      {/* --- SECTION 3: TABLE (Menggunakan Komponen Terpisah) --- */}
+      {/* --- SECTION 3: TABLE --- */}
+      {/* KUNCINYA DISINI: 
+         Data 'filteredProducts' ini berasal dari props 'products'.
+         Props 'products' berasal dari Server yang sudah di-SORTING.
+         Jadi tabel ini otomatis menerima data yang sudah urut.
+      */}
       <div className="inventory-content mt-6">
         <ProductTable data={filteredProducts} />
       </div>
 
-      {/* --- 4. RENDER MODAL FORM DI SINI (PALING BAWAH) --- */}
+      {/* --- 4. RENDER MODAL FORM --- */}
       {isFormOpen && <ProductForm onClose={() => setIsFormOpen(false)} />}
 
       {/* Footer */}

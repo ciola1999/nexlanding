@@ -19,7 +19,7 @@ import {
   PackageOpen,
   X,
   User,
-  Phone,
+  Phone, // Pastikan icon ini ada
   Armchair,
   CheckCircle2,
   Send,
@@ -30,6 +30,8 @@ import {
   CreditCard,
   Printer,
   Menu,
+  MessageCircle, // <--- TAMBAHAN: Icon untuk WA
+  Share2, // <--- TAMBAHAN: Icon Alternatif
 } from 'lucide-react';
 
 // --- UTILS & ACTIONS ---
@@ -38,7 +40,7 @@ import { processCheckout } from '@/features/smart-pos/_actions/transaction';
 import type { Product, CartItem } from '@/types';
 import type { Order } from '@/features/smart-pos/db/schema';
 
-// --- SHADCN COMPONENTS (Pastikan sudah diinstall) ---
+// --- SHADCN COMPONENTS ---
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -68,7 +70,7 @@ interface CustomerFormState {
   customerName: string;
   customerPhone: string;
   orderType: 'dine_in' | 'take_away';
-  paymentMethod: 'cash' | 'transfer';
+  paymentMethod: 'cash' | 'debit' | 'qris'; // Update agar sesuai db
 }
 
 interface SuccessData {
@@ -82,13 +84,13 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
 
   // --- STATE ---
   const [cart, setCart] = React.useState<CartItem[]>([]);
-  const [searchQuery, setSearchQuery] = React.useState(''); // Balik ke useState biasa dulu biar simple
+  const [searchQuery, setSearchQuery] = React.useState('');
   const [isPending, startTransition] = useTransition();
   const [isInitialized, setIsInitialized] = React.useState(false);
 
   // UI States
   const [isCheckoutOpen, setIsCheckoutOpen] = React.useState(false);
-  const [isCartSheetOpen, setIsCartSheetOpen] = React.useState(false); // State untuk Mobile Drawer
+  const [isCartSheetOpen, setIsCartSheetOpen] = React.useState(false);
 
   // Form State
   const [customerForm, setCustomerForm] = React.useState<CustomerFormState>({
@@ -129,11 +131,10 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
       startTransition(() => {
         router.refresh();
       });
-    }, 30000); // 30 Detik
+    }, 30000);
     return () => clearInterval(interval);
   }, [router]);
 
-  // Validasi Cart (Fix Infinite Loop)
   useEffect(() => {
     if (!isInitialized || cart.length === 0) return;
 
@@ -168,7 +169,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
       .filter(Boolean) as CartItem[];
 
     if (hasChanges || itemsRemoved.length > 0) {
-      // Gunakan requestAnimationFrame atau timeout untuk menghindari update state saat render
       setTimeout(() => {
         setCart(validatedCart);
         if (itemsRemoved.length > 0) {
@@ -180,7 +180,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialProducts, isInitialized]);
-  // Dependency 'cart' dihapus sengaja agar tidak loop, validasi hanya jalan saat 'initialProducts' berubah (dari server)
 
   // --- FILTERING ---
   const filteredProducts = useMemo(() => {
@@ -272,6 +271,7 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     }
 
     startTransition(async () => {
+      // ts-ignore (Sementara, karena transaction.ts kamu mengharapkan format yg mungkin sedikit beda di items, tapi logicnya sudah jalan)
       const res = await processCheckout(
         cart.map((i) => ({ id: i.id, quantity: i.quantity, price: i.price })),
         customerForm
@@ -282,6 +282,7 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
         setCart([]);
         setIsCheckoutOpen(false);
         setIsCartSheetOpen(false);
+        // Reset form tapi keep beberapa preference kalau mau
         setCustomerForm({
           tableNumber: '',
           customerName: '',
@@ -296,7 +297,58 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     });
   };
 
-  // --- SUB-COMPONENTS (RENDER HELPERS) ---
+  // --- 🔥 NEW FEATURE: GENERATE WHATSAPP RECEIPT ---
+  const handleSendWhatsApp = () => {
+    if (!successData) return;
+
+    const { order, items } = successData;
+
+    // 1. Header Struk
+    let text = `*STRUK PEMBAYARAN - NEXPOS*\n`;
+    text += `--------------------------------\n`;
+    text += `📅 Tanggal: ${new Date().toLocaleDateString('id-ID')}\n`;
+    text += `🧾 Order ID: #${order.id}\n`;
+    text += `👤 Pelanggan: ${order.customerName || 'Guest'}\n`;
+    if (order.tableNumber) text += `🪑 Meja: ${order.tableNumber}\n`;
+    text += `--------------------------------\n`;
+
+    // 2. Detail Item
+    items.forEach((item) => {
+      text += `${item.quantity}x ${item.name}\n`;
+      text += `   @ ${formatRupiah(item.price)} = ${formatRupiah(
+        item.price * item.quantity
+      )}\n`;
+    });
+
+    // 3. Footer & Total
+    text += `--------------------------------\n`;
+    text += `*TOTAL: ${formatRupiah(order.totalAmount)}*\n`;
+    text += `💳 Metode: ${
+      order.paymentMethod ? order.paymentMethod.toUpperCase() : '-'
+    }\n`;
+    text += `--------------------------------\n`;
+    text += `Terima kasih telah berbelanja! 🙏\n`;
+    text += `_Simpan struk ini sebagai bukti pembayaran yang sah._`;
+
+    // 4. Buat URL WhatsApp
+    const encodedText = encodeURIComponent(text);
+    let waUrl = '';
+
+    if (order.customerPhone) {
+      // Format 08xx -> 628xx
+      let p = order.customerPhone.replace(/\D/g, '');
+      if (p.startsWith('0')) p = '62' + p.substring(1);
+      waUrl = `https://wa.me/${p}?text=${encodedText}`;
+    } else {
+      // Jika tidak ada nomor, buka WA picker agar kasir bisa pilih kontak manual
+      waUrl = `https://wa.me/?text=${encodedText}`;
+      toast.info('Nomor HP kosong, silakan pilih kontak di WhatsApp.');
+    }
+
+    window.open(waUrl, '_blank');
+  };
+
+  // --- RENDER HELPERS ---
   const CartList = () => (
     <div className="flex flex-col gap-3">
       {cart.length === 0 ? (
@@ -380,25 +432,18 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
       </div>
     );
 
-  // ... (Kode logic di atas biarkan sama) ...
-
   return (
-    // FIX 1: Tambahkan 'overflow-x-hidden' agar tidak ada scroll ke samping
     <div
       ref={containerRef}
       className="flex flex-col h-[100dvh] bg-background text-foreground overflow-hidden overflow-x-hidden relative"
     >
-      {/* HEADER: Lebih Slim di Mobile */}
-      {/* FIX 2: Ubah py-3 jadi py-2, dan px-4 jadi px-3 untuk mobile */}
+      {/* HEADER */}
       <header className="px-3 py-2 lg:px-4 lg:py-3 border-b border-border flex items-center gap-3 shrink-0 bg-background/50 backdrop-blur-sm z-20">
         <div className="relative flex-1 lg:max-w-md">
-          {/* Icon Search lebih kecil dikit di mobile */}
           <Search
             className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
             size={16}
           />
-
-          {/* Input lebih pendek (h-9) dan text lebih kecil (text-sm) */}
           <Input
             className="pl-9 h-9 text-sm bg-muted/50 border-transparent focus:border-primary focus:bg-background rounded-full lg:rounded-md transition-all"
             placeholder="Cari Produk..."
@@ -407,7 +452,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
           />
         </div>
 
-        {/* Status Bar (Desktop Only) */}
         <div className="hidden lg:flex items-center gap-4 ml-auto">
           <Badge variant="outline" className="border-primary text-primary">
             System Online
@@ -420,8 +464,7 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
 
       {/* MAIN LAYOUT */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* LEFT: PRODUCT GRID */}
-        {/* FIX 3: Padding mobile jadi p-2, Desktop p-4. Padding bawah ditambah biar gak ketutup floating bar */}
+        {/* PRODUCT GRID */}
         <div className="flex-1 overflow-y-auto p-2 pb-24 lg:p-4 lg:pb-4 custom-scrollbar">
           {filteredProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-[50vh] text-muted-foreground gap-3">
@@ -429,7 +472,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
               <p className="text-sm">Produk tidak ditemukan</p>
             </div>
           ) : (
-            // FIX 4: Grid gap diperkecil (gap-2) untuk mobile
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 lg:gap-4">
               {filteredProducts.map((product) => (
                 <button
@@ -437,12 +479,11 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                   disabled={product.stock === 0}
                   onClick={() => addToCart(product)}
                   className={cn(
-                    'product-card group relative flex flex-col bg-card rounded-lg lg:rounded-xl overflow-hidden border border-border hover:border-primary/50 transition-all text-left shadow-sm hover:shadow-md h-full active:scale-95', // active:scale-95 bikin efek klik di HP enak
+                    'product-card group relative flex flex-col bg-card rounded-lg lg:rounded-xl overflow-hidden border border-border hover:border-primary/50 transition-all text-left shadow-sm hover:shadow-md h-full active:scale-95',
                     product.stock === 0 &&
                       'opacity-50 grayscale cursor-not-allowed'
                   )}
                 >
-                  {/* Aspek Rasio Gambar */}
                   <div className="aspect-[4/3] relative bg-muted w-full">
                     {product.imageUrl ? (
                       <Image
@@ -458,7 +499,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                       </div>
                     )}
 
-                    {/* Label Stok Sisa */}
                     {product.stock > 0 && product.stock < 10 && (
                       <span className="absolute top-1 right-1 lg:top-2 lg:right-2 bg-destructive text-destructive-foreground text-[9px] lg:text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm">
                         Sisa {product.stock}
@@ -471,9 +511,7 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                     )}
                   </div>
 
-                  {/* Info Produk */}
                   <div className="p-2 lg:p-3 flex flex-col flex-1 gap-1 lg:gap-2">
-                    {/* Nama Produk: Text lebih kecil di mobile (text-xs) */}
                     <h3 className="font-medium text-xs lg:text-sm line-clamp-2 leading-tight min-h-[2.5em]">
                       {product.name}
                     </h3>
@@ -482,7 +520,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                       <span className="text-primary font-bold text-xs lg:text-sm">
                         {formatRupiah(product.price)}
                       </span>
-                      {/* Tombol Plus Kecil */}
                       {product.stock > 0 && (
                         <div className="h-5 w-5 lg:h-6 lg:w-6 rounded-full bg-muted flex items-center justify-center group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
                           <Plus size={12} className="lg:w-[14px] lg:h-[14px]" />
@@ -496,7 +533,7 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
           )}
         </div>
 
-        {/* RIGHT: CART SIDEBAR (DESKTOP ONLY) */}
+        {/* CART SIDEBAR (DESKTOP) */}
         <div className="hidden lg:flex w-[380px] border-l border-border bg-card flex-col shrink-0 h-full z-10">
           <div className="p-4 border-b border-border flex items-center justify-between bg-card">
             <div className="flex items-center gap-2 font-bold">
@@ -513,8 +550,7 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
         </div>
       </div>
 
-      {/* MOBILE BOTTOM FLOATING BAR */}
-      {/* FIX 5: Padding bottom aman, width calc biar gak nabrak pinggir */}
+      {/* MOBILE FLOATING BAR */}
       <div className="lg:hidden fixed bottom-4 left-3 right-3 bg-card/90 backdrop-blur-md border border-primary/20 rounded-xl p-3 shadow-[0_4px_20px_rgba(0,0,0,0.5)] z-40 flex items-center justify-between animate-in slide-in-from-bottom-4">
         <div className="flex flex-col pl-1">
           <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
@@ -533,7 +569,7 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
         </Button>
       </div>
 
-      {/* --- MODAL & DRAWERS (Sama seperti sebelumnya) --- */}
+      {/* MODAL & DRAWERS */}
       <Sheet open={isCartSheetOpen} onOpenChange={setIsCartSheetOpen}>
         <SheetContent
           side="bottom"
@@ -549,15 +585,14 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
             <CartList />
           </ScrollArea>
           <div className="p-4 border-t border-border bg-background pb-8">
-            {/* pb-8 untuk safe area iPhone */}
             <CheckoutSummary />
           </div>
         </SheetContent>
       </Sheet>
 
+      {/* DIALOG CHECKOUT (INPUT FORM) */}
       <Dialog open={isCheckoutOpen} onOpenChange={setIsCheckoutOpen}>
         <DialogContent className="w-[90%] rounded-xl sm:max-w-md bg-card border-border">
-          {/* w-[90%] rounded-xl agar di HP modalnya tidak nempel pinggir */}
           <DialogHeader>
             <DialogTitle>Checkout</DialogTitle>
             <DialogDescription>Lengkapi detail pesanan.</DialogDescription>
@@ -633,6 +668,55 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                 }
               />
             </div>
+            {/* TAMBAHAN: Input Nomor HP di Modal Checkout agar lebih lengkap */}
+            <div className="relative">
+              <Phone
+                className="absolute left-3 top-2.5 text-muted-foreground"
+                size={14}
+              />
+              <Input
+                placeholder="Nomor HP (WhatsApp)"
+                type="tel"
+                className="pl-9 h-10 text-sm"
+                value={customerForm.customerPhone}
+                onChange={(e) =>
+                  setCustomerForm({
+                    ...customerForm,
+                    customerPhone: e.target.value,
+                  })
+                }
+              />
+            </div>
+
+            {/* --- UPDATE: PAYMENT METHOD SELECTOR (TYPE SAFE) --- */}
+            <div className="grid grid-cols-3 gap-2 mt-2">
+              {[
+                { id: 'cash', label: 'Cash', icon: Banknote },
+                { id: 'debit', label: 'Debit', icon: CreditCard },
+                { id: 'qris', label: 'QRIS', icon: CheckCircle2 }, // Ganti icon sesuai selera
+              ].map((method) => (
+                <div
+                  key={method.id}
+                  onClick={() =>
+                    setCustomerForm((p) => ({
+                      ...p,
+                      paymentMethod: method.id as 'cash' | 'debit' | 'qris',
+                    }))
+                  }
+                  className={cn(
+                    'flex flex-col items-center justify-center p-2 rounded-lg border cursor-pointer transition-all',
+                    customerForm.paymentMethod === method.id
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border hover:bg-muted'
+                  )}
+                >
+                  <method.icon size={16} className="mb-1" />
+                  <span className="text-[10px] font-bold uppercase">
+                    {method.label}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
 
           <DialogFooter className="flex-row items-center justify-between gap-3 mt-2">
@@ -657,6 +741,7 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
         </DialogContent>
       </Dialog>
 
+      {/* --- DIALOG SUKSES (DENGAN TOMBOL WA) --- */}
       <Dialog
         open={!!successData}
         onOpenChange={(open) => !open && setSuccessData(null)}
@@ -679,16 +764,30 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
             <p className="text-4xl font-bold text-primary tracking-tighter my-1">
               {successData?.order.queueNumber}
             </p>
+            <p className="text-[10px] uppercase text-muted-foreground font-bold tracking-widest mt-1">
+              Metode: {successData?.order.paymentMethod.toUpperCase()}
+            </p>
           </div>
 
+          {/* GRID TOMBOL */}
           <div className="grid gap-2">
             <Button size="sm" variant="outline" onClick={() => window.print()}>
               <Printer className="mr-2 h-3 w-3" /> Cetak Struk
             </Button>
+
+            {/* 🔥 TOMBOL KIRIM WA BARU 🔥 */}
+            <Button
+              size="sm"
+              className="bg-[#25D366] hover:bg-[#128C7E] text-white border-0 font-bold"
+              onClick={handleSendWhatsApp}
+            >
+              <MessageCircle className="mr-2 h-4 w-4" /> Kirim Struk WA
+            </Button>
+
             <Button
               size="sm"
               variant="ghost"
-              className="text-muted-foreground h-8"
+              className="text-muted-foreground h-8 mt-1"
               onClick={() => setSuccessData(null)}
             >
               Tutup

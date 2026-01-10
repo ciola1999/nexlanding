@@ -13,18 +13,23 @@ import {
   Phone,
   Armchair,
   Hash,
+  QrCode, // Icon Baru
+  Banknote, // Icon Baru
+  MessageCircle, // Icon untuk WA
 } from 'lucide-react';
+import { cn } from '@/lib/utils'; // Pastikan import cn utility kamu
 
 // Tipe Data sesuai Schema/Action
 type HistoryItem = {
   id: number;
   totalAmount: number;
-  paymentMethod: string;
+  // Update Type: String literal agar autocomplete jalan
+  paymentMethod: 'cash' | 'debit' | 'qris' | string;
   tableNumber: string | null;
   customerName?: string | null;
   customerPhone?: string | null;
   queueNumber: number;
-  createdAt: Date | string | null; // Support string/Date
+  createdAt: Date | string | null;
   items: {
     id: number;
     quantity: number;
@@ -49,16 +54,10 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
     }).format(val);
   };
 
-  // 2. FORMAT TANGGAL & JAM (FIXED)
+  // 2. FORMAT TANGGAL
   const formatDate = (dateInput: Date | string | null) => {
     if (!dateInput) return '-';
-
-    // Konversi input ke object Date yang valid
     const date = new Date(dateInput);
-
-    // Gunakan toLocaleString untuk kontrol penuh
-    // 'id-ID' formatnya biasanya dd/mm/yyyy j.m
-    // Kita custom agar separator jam jadi titik dua (:)
     return date
       .toLocaleString('id-ID', {
         day: 'numeric',
@@ -66,12 +65,51 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
         year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
-        hour12: false, // Pastikan format 24 jam
-        timeZone: 'Asia/Jakarta', // Mengunci ke WIB
+        hour12: false,
+        timeZone: 'Asia/Jakarta',
       })
-      .replace(/\./g, ':'); // Ubah separator jam 13.00 jadi 13:00
+      .replace(/\./g, ':');
   };
 
+  // 3. HELPER: WARNA & ICON PEMBAYARAN
+  const getPaymentBadge = (method: string) => {
+    const m = method.toLowerCase();
+    switch (m) {
+      case 'qris':
+        return {
+          colorClass:
+            'from-purple-500/20 to-purple-900/10 text-purple-400 border-purple-500/20',
+          icon: QrCode,
+          label: 'QRIS',
+        };
+      case 'debit':
+        return {
+          colorClass:
+            'from-blue-500/20 to-blue-900/10 text-blue-400 border-blue-500/20',
+          icon: CreditCard,
+          label: 'DEBIT',
+        };
+      case 'cash':
+      default:
+        return {
+          colorClass:
+            'from-emerald-500/20 to-emerald-900/10 text-emerald-400 border-emerald-500/20',
+          icon: Banknote,
+          label: 'CASH',
+        };
+    }
+  };
+
+  // 4. ACTION: OPEN WHATSAPP
+  const handleOpenWA = (phone: string | null | undefined) => {
+    if (!phone) return;
+    // Bersihkan format nomor (08xx -> 628xx)
+    let p = phone.replace(/\D/g, '');
+    if (p.startsWith('0')) p = '62' + p.substring(1);
+    window.open(`https://wa.me/${p}`, '_blank');
+  };
+
+  // ANIMASI
   useGSAP(
     () => {
       if (!containerRef.current) return;
@@ -81,7 +119,7 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
         { opacity: 1, y: 0, duration: 0.4, stagger: 0.05, ease: 'power2.out' }
       );
     },
-    { scope: containerRef, dependencies: [history] } // Tambahkan dependency history
+    { scope: containerRef, dependencies: [history] }
   );
 
   const toggleExpand = (id: number) => {
@@ -106,191 +144,221 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
 
   return (
     <div ref={containerRef} className="flex flex-col w-full pb-20">
-      {history.map((order) => (
-        <div
-          key={order.id}
-          className={`history-row border-b border-white/5 last:border-0 transition-all duration-300 ${
-            expandedId === order.id
-              ? 'bg-white/[0.03] border-l-2 border-l-[#dfff4f]'
-              : 'hover:bg-white/[0.02] border-l-2 border-l-transparent'
-          }`}
-        >
-          {/* --- HEADER ROW (KLIK UNTUK EXPAND) --- */}
+      {history.map((order) => {
+        // Ambil styling badge berdasarkan metode pembayaran
+        const badge = getPaymentBadge(order.paymentMethod);
+        const PaymentIcon = badge.icon;
+
+        return (
           <div
-            onClick={() => toggleExpand(order.id)}
-            className="p-4 sm:p-5 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 select-none"
-          >
-            {/* Kiri: Icon & Basic Info */}
-            <div className="flex items-start sm:items-center gap-4">
-              <div
-                className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border shadow-lg ${
-                  order.paymentMethod === 'CASH'
-                    ? 'bg-gradient-to-br from-emerald-500/20 to-emerald-900/10 text-emerald-400 border-emerald-500/20'
-                    : 'bg-gradient-to-br from-blue-500/20 to-blue-900/10 text-blue-400 border-blue-500/20'
-                }`}
-              >
-                <ShoppingBag size={20} />
-              </div>
-
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-white text-base tracking-wide">
-                    Order #{order.id}
-                  </h3>
-                  {/* Badge Status */}
-                  <span className="text-[10px] px-2 py-0.5 rounded-md bg-[#dfff4f]/10 text-[#dfff4f] border border-[#dfff4f]/20 font-bold uppercase tracking-wider">
-                    Success
-                  </span>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400 mt-1.5 font-medium">
-                  <div className="flex items-center gap-1.5 bg-white/5 px-2 py-0.5 rounded-md">
-                    <Calendar size={12} className="text-gray-500" />
-                    <span className="tracking-wide text-gray-300">
-                      {formatDate(order.createdAt)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 bg-white/5 px-2 py-0.5 rounded-md">
-                    <User size={12} className="text-gray-500" />
-                    <span className="text-gray-300">
-                      {order.customerName || 'Guest'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Kanan: Harga & Chevron */}
-            <div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto pl-[4rem] sm:pl-0">
-              <div className="text-right">
-                <div className="text-lg font-bold text-white tracking-tight">
-                  {formatRupiah(order.totalAmount)}
-                </div>
-                <div className="flex items-center justify-end gap-1.5 text-[10px] text-gray-500 uppercase font-bold tracking-widest mt-0.5">
-                  <CreditCard size={10} />
-                  {order.paymentMethod}
-                </div>
-              </div>
-
-              <div
-                className={`w-8 h-8 flex items-center justify-center rounded-full transition-all duration-300 border border-white/5 ${
-                  expandedId === order.id
-                    ? 'rotate-180 bg-[#dfff4f] text-black border-[#dfff4f]'
-                    : 'text-gray-500 bg-white/5 hover:bg-white/10'
-                }`}
-              >
-                <ChevronDown size={16} />
-              </div>
-            </div>
-          </div>
-
-          {/* --- EXPANDED BODY (DETAIL) --- */}
-          <div
-            className={`grid transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+            key={order.id}
+            className={`history-row border-b border-white/5 last:border-0 transition-all duration-300 ${
               expandedId === order.id
-                ? 'grid-rows-[1fr] opacity-100'
-                : 'grid-rows-[0fr] opacity-0'
+                ? 'bg-white/[0.03] border-l-2 border-l-[#dfff4f]'
+                : 'hover:bg-white/[0.02] border-l-2 border-l-transparent'
             }`}
           >
-            <div className="overflow-hidden">
-              <div className="bg-black/20 border-t border-dashed border-white/10 mx-0 sm:mx-4 mb-4 rounded-b-2xl px-4 pb-4">
-                {/* 1. INFORMASI ORDER (GRID LAYOUT) */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-6 text-sm">
-                  <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-white/5 border border-white/5">
-                    <span className="text-gray-500 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold">
-                      <Armchair size={12} /> No. Meja
-                    </span>
-                    <span className="text-white font-bold text-lg">
-                      {order.tableNumber}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-white/5 border border-white/5">
-                    <span className="text-gray-500 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold">
-                      <Hash size={12} /> Antrian
-                    </span>
-                    <span className="text-[#dfff4f] font-bold text-lg">
-                      #{order.queueNumber}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-white/5 border border-white/5">
-                    <span className="text-gray-500 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold">
-                      <User size={12} /> Pelanggan
-                    </span>
-                    <span className="text-white font-medium truncate">
-                      {order.customerName || 'Guest'}
+            {/* --- HEADER ROW --- */}
+            <div
+              onClick={() => toggleExpand(order.id)}
+              className="p-4 sm:p-5 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 select-none"
+            >
+              {/* Kiri: Icon & Info Utama */}
+              <div className="flex items-start sm:items-center gap-4">
+                {/* ICON PEMBAYARAN DENGAN WARNA DINAMIS */}
+                <div
+                  className={cn(
+                    'w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border shadow-lg bg-gradient-to-br',
+                    badge.colorClass
+                  )}
+                >
+                  <PaymentIcon size={20} />
+                </div>
+
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-white text-base tracking-wide">
+                      Order #{order.id}
+                    </h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-[#dfff4f]/10 text-[#dfff4f] border border-[#dfff4f]/20 font-bold uppercase tracking-wider">
+                      Success
                     </span>
                   </div>
-                  <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-white/5 border border-white/5">
-                    <span className="text-gray-500 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold">
-                      <Phone size={12} /> No. HP
-                    </span>
-                    <span className="text-white font-medium">
-                      {order.customerPhone || '-'}
-                    </span>
+
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400 mt-1.5 font-medium">
+                    <div className="flex items-center gap-1.5 bg-white/5 px-2 py-0.5 rounded-md">
+                      <Calendar size={12} className="text-gray-500" />
+                      <span className="tracking-wide text-gray-300">
+                        {formatDate(order.createdAt)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 bg-white/5 px-2 py-0.5 rounded-md">
+                      <User size={12} className="text-gray-500" />
+                      <span className="text-gray-300">
+                        {order.customerName || 'Guest'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Kanan: Harga & Toggle */}
+              <div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto pl-[4rem] sm:pl-0">
+                <div className="text-right">
+                  <div className="text-lg font-bold text-white tracking-tight">
+                    {formatRupiah(order.totalAmount)}
+                  </div>
+                  {/* Label Metode Pembayaran */}
+                  <div className="flex items-center justify-end gap-1.5 text-[10px] text-gray-500 uppercase font-bold tracking-widest mt-0.5">
+                    <PaymentIcon size={10} />
+                    {badge.label}
                   </div>
                 </div>
 
-                {/* 2. TABEL ITEM */}
-                <div className="border border-white/5 rounded-xl overflow-hidden bg-[#121317]">
-                  <table className="w-full text-sm text-left text-gray-300">
-                    <thead className="text-[10px] text-gray-500 uppercase bg-white/5 tracking-wider">
-                      <tr>
-                        <th className="px-4 py-3 font-bold">Produk</th>
-                        <th className="px-4 py-3 text-right font-bold">
-                          Harga
-                        </th>
-                        <th className="px-4 py-3 text-center font-bold">Qty</th>
-                        <th className="px-4 py-3 text-right font-bold">
-                          Subtotal
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5">
-                      {order.items.map((item) => (
-                        <tr
-                          key={item.id}
-                          className="hover:bg-white/[0.02] transition-colors group"
-                        >
-                          <td className="px-4 py-3">
-                            {item.product ? (
-                              <span className="text-white group-hover:text-[#dfff4f] transition-colors font-medium">
-                                {item.product.name}
-                              </span>
-                            ) : (
-                              <span className="text-red-400 italic flex items-center gap-1 text-xs">
-                                <PackageX size={12} /> Produk Dihapus
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-right text-gray-500 font-mono text-xs">
-                            {formatRupiah(item.priceAtTime)}
-                          </td>
-                          <td className="px-4 py-3 text-center text-white text-xs font-bold">
-                            x{item.quantity}
-                          </td>
-                          <td className="px-4 py-3 text-right text-white font-bold font-mono text-xs">
-                            {formatRupiah(item.priceAtTime * item.quantity)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div
+                  className={`w-8 h-8 flex items-center justify-center rounded-full transition-all duration-300 border border-white/5 ${
+                    expandedId === order.id
+                      ? 'rotate-180 bg-[#dfff4f] text-black border-[#dfff4f]'
+                      : 'text-gray-500 bg-white/5 hover:bg-white/10'
+                  }`}
+                >
+                  <ChevronDown size={16} />
+                </div>
+              </div>
+            </div>
 
-                  {/* Total Footer */}
-                  <div className="px-4 py-3 bg-[#dfff4f]/5 flex justify-between items-center border-t border-[#dfff4f]/10">
-                    <span className="text-xs text-[#dfff4f] uppercase font-bold tracking-widest">
-                      Total Transaksi
-                    </span>
-                    <span className="text-base font-bold text-[#dfff4f]">
-                      {formatRupiah(order.totalAmount)}
-                    </span>
+            {/* --- EXPANDED DETAIL --- */}
+            <div
+              className={`grid transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                expandedId === order.id
+                  ? 'grid-rows-[1fr] opacity-100'
+                  : 'grid-rows-[0fr] opacity-0'
+              }`}
+            >
+              <div className="overflow-hidden">
+                <div className="bg-black/20 border-t border-dashed border-white/10 mx-0 sm:mx-4 mb-4 rounded-b-2xl px-4 pb-4">
+                  {/* DETAIL GRID */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-6 text-sm">
+                    {/* Meja */}
+                    <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-white/5 border border-white/5">
+                      <span className="text-gray-500 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold">
+                        <Armchair size={12} /> No. Meja
+                      </span>
+                      <span className="text-white font-bold text-lg">
+                        {order.tableNumber}
+                      </span>
+                    </div>
+
+                    {/* Antrian */}
+                    <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-white/5 border border-white/5">
+                      <span className="text-gray-500 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold">
+                        <Hash size={12} /> Antrian
+                      </span>
+                      <span className="text-[#dfff4f] font-bold text-lg">
+                        #{order.queueNumber}
+                      </span>
+                    </div>
+
+                    {/* Nama Pelanggan */}
+                    <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-white/5 border border-white/5">
+                      <span className="text-gray-500 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold">
+                        <User size={12} /> Pelanggan
+                      </span>
+                      <span className="text-white font-medium truncate">
+                        {order.customerName || 'Guest'}
+                      </span>
+                    </div>
+
+                    {/* No HP & Tombol WA */}
+                    <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-white/5 border border-white/5 relative group">
+                      <span className="text-gray-500 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold">
+                        <Phone size={12} /> No. HP
+                      </span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-white font-medium truncate">
+                          {order.customerPhone || '-'}
+                        </span>
+                        {/* Tombol WA Muncul jika ada nomor HP */}
+                        {order.customerPhone && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenWA(order.customerPhone);
+                            }}
+                            className="bg-green-600 hover:bg-green-500 text-white p-1 rounded-full transition-colors shadow-lg"
+                            title="Chat WhatsApp"
+                          >
+                            <MessageCircle size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* TABEL ITEM */}
+                  <div className="border border-white/5 rounded-xl overflow-hidden bg-[#121317]">
+                    <table className="w-full text-sm text-left text-gray-300">
+                      <thead className="text-[10px] text-gray-500 uppercase bg-white/5 tracking-wider">
+                        <tr>
+                          <th className="px-4 py-3 font-bold">Produk</th>
+                          <th className="px-4 py-3 text-right font-bold">
+                            Harga
+                          </th>
+                          <th className="px-4 py-3 text-center font-bold">
+                            Qty
+                          </th>
+                          <th className="px-4 py-3 text-right font-bold">
+                            Subtotal
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {order.items.map((item) => (
+                          <tr
+                            key={item.id}
+                            className="hover:bg-white/[0.02] transition-colors group"
+                          >
+                            <td className="px-4 py-3">
+                              {item.product ? (
+                                <span className="text-white group-hover:text-[#dfff4f] transition-colors font-medium">
+                                  {item.product.name}
+                                </span>
+                              ) : (
+                                <span className="text-red-400 italic flex items-center gap-1 text-xs">
+                                  <PackageX size={12} /> Produk Dihapus
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right text-gray-500 font-mono text-xs">
+                              {formatRupiah(item.priceAtTime)}
+                            </td>
+                            <td className="px-4 py-3 text-center text-white text-xs font-bold">
+                              x{item.quantity}
+                            </td>
+                            <td className="px-4 py-3 text-right text-white font-bold font-mono text-xs">
+                              {formatRupiah(item.priceAtTime * item.quantity)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+
+                    {/* Total Footer */}
+                    <div className="px-4 py-3 bg-[#dfff4f]/5 flex justify-between items-center border-t border-[#dfff4f]/10">
+                      <span className="text-xs text-[#dfff4f] uppercase font-bold tracking-widest">
+                        Total Transaksi
+                      </span>
+                      <span className="text-base font-bold text-[#dfff4f]">
+                        {formatRupiah(order.totalAmount)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
