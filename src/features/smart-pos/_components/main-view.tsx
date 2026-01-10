@@ -148,8 +148,8 @@ export default function SmartPosMainView({
       <Toaster position="bottom-left" richColors closeButton theme="dark" />
 
       {/* Floating Navbar */}
-      <div className="fixed top-6 left-1/2 -translate-x-1/2 w-[95%] max-w-[1600px] z-50">
-        <div className="bg-[#1c1d24]/80 backdrop-blur-2xl border border-white/10 rounded-2xl px-4 py-3 flex items-center justify-between shadow-2xl shadow-black/50">
+      <div className="fixed top-6 left-1/2 -translate-x-1/2 w-[95%] max-w-400 z-50">
+        <div className="bg-[#1c1d24]/80 backdrop-blur-2xl border border-white/10 rounded-2xl px-4 py-1.5 flex items-center justify-between shadow-2xl shadow-black/50">
           <div className="flex items-center gap-3 pl-2">
             <div className="w-9 h-9 bg-[#dfff4f] rounded-lg flex items-center justify-center text-black font-black text-lg shadow-[0_0_15px_rgba(223,255,79,0.4)]">
               N
