@@ -27,9 +27,7 @@ import {
   Banknote,
   CreditCard,
   Printer,
-  Menu,
   MessageCircle, // <--- TAMBAHAN: Icon untuk WA
-  Share2, // <--- TAMBAHAN: Icon Alternatif
 } from 'lucide-react';
 
 // --- UTILS & ACTIONS ---
@@ -58,6 +56,8 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
+import { ReceiptTemplate } from './ReceiptTemplate';
+
 // --- TYPES ---
 interface POSInterfaceProps {
   initialProducts: Product[];
@@ -74,6 +74,8 @@ interface CustomerFormState {
 interface SuccessData {
   order: Order;
   items: CartItem[];
+  cashReceived?: number; // <--- Tambahkan ini
+  change?: number;
 }
 
 export default function POSInterface({ initialProducts }: POSInterfaceProps) {
@@ -99,10 +101,15 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     paymentMethod: 'cash',
   });
 
+  const [cashGiven, setCashGiven] = React.useState(0);
+
   // Result State
-  const [successData, setSuccessData] = React.useState<SuccessData | null>(
-    null
-  );
+  const [successData, setSuccessData] = React.useState<{
+    order: Order;
+    items: CartItem[];
+    cashReceived?: number;
+    change?: number;
+  } | null>(null);
 
   // --- INIT & LOCAL STORAGE ---
   useEffect(() => {
@@ -253,13 +260,18 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     );
   };
 
+  // 👇 TAMBAHKAN INI (Hitung Kembalian Otomatis)
   const subtotal = useMemo(
     () => cart.reduce((acc, item) => acc + item.price * item.quantity, 0),
     [cart]
   );
 
+  // Hitung kembalian real-time
+  const change = cashGiven - subtotal;
+
   // --- CHECKOUT ---
   const handleCheckout = async () => {
+    // 1. Validasi Meja (Dine In)
     if (
       customerForm.orderType === 'dine_in' &&
       !customerForm.tableNumber.trim()
@@ -268,19 +280,39 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
       return;
     }
 
+    // 2. 🔥 Validasi Uang Tunai (Client Side Guard)
+    if (customerForm.paymentMethod === 'cash' && cashGiven < subtotal) {
+      toast.error('Uang tunai kurang!', {
+        description: `Kurang ${formatRupiah(subtotal - cashGiven)}`,
+      });
+      return;
+    }
+
     startTransition(async () => {
-      // ts-ignore (Sementara, karena transaction.ts kamu mengharapkan format yg mungkin sedikit beda di items, tapi logicnya sudah jalan)
+      // 3. 🔥 Tentukan Amount Paid untuk Backend
+      // Jika Cash: pakai input user. Jika QRIS/Debit: anggap bayar pas (sesuai tagihan)
+      const finalAmountPaid =
+        customerForm.paymentMethod === 'cash' ? cashGiven : subtotal;
+
       const res = await processCheckout(
         cart.map((i) => ({ id: i.id, quantity: i.quantity, price: i.price })),
-        customerForm
+        {
+          ...customerForm,
+          amountPaid: finalAmountPaid, // 👈 Kirim data ini ke Backend
+        }
       );
 
       if (res.success && res.data) {
-        setSuccessData({ order: res.data, items: [...cart] });
+        setSuccessData({
+          order: res.data,
+          items: [...cart],
+          cashReceived: finalAmountPaid,
+          change: finalAmountPaid - subtotal,
+        });
         setCart([]);
+        setCashGiven(0); // Reset
         setIsCheckoutOpen(false);
         setIsCartSheetOpen(false);
-        // Reset form tapi keep beberapa preference kalau mau
         setCustomerForm({
           tableNumber: '',
           customerName: '',
@@ -297,20 +329,26 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
 
   // --- 🔥 NEW FEATURE: GENERATE WHATSAPP RECEIPT ---
   const handleSendWhatsApp = () => {
-    if (!successData) return;
+    // 1. Cek ketersediaan data sukses
+    if (!successData || !successData.order) return;
 
     const { order, items } = successData;
 
-    // 1. Header Struk
+    // --- PEMBUATAN TEXT STRUK ---
     let text = `*STRUK PEMBAYARAN - NEXPOS*\n`;
     text += `--------------------------------\n`;
     text += `📅 Tanggal: ${new Date().toLocaleDateString('id-ID')}\n`;
     text += `🧾 Order ID: #${order.id}\n`;
     text += `👤 Pelanggan: ${order.customerName || 'Guest'}\n`;
-    if (order.tableNumber) text += `🪑 Meja: ${order.tableNumber}\n`;
+
+    // Gunakan data dari ORDER, bukan customerForm
+    if (order.tableNumber) {
+      text += `🪑 Meja: ${order.tableNumber}\n`;
+    }
+
     text += `--------------------------------\n`;
 
-    // 2. Detail Item
+    // Detail Item
     items.forEach((item) => {
       text += `${item.quantity}x ${item.name}\n`;
       text += `   @ ${formatRupiah(item.price)} = ${formatRupiah(
@@ -318,9 +356,14 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
       )}\n`;
     });
 
-    // 3. Footer & Total
+    // Footer & Total
     text += `--------------------------------\n`;
     text += `*TOTAL: ${formatRupiah(order.totalAmount)}*\n`;
+    // 🔥 PERBAIKAN: Gunakan 'amountPaid' dan 'change' sesuai definisi tipe data kamu
+    if (order.paymentMethod === 'cash') {
+      text += `💵 Tunai: ${formatRupiah(order.amountPaid)}\n`;
+      text += `🔄 Kembali: ${formatRupiah(order.change)}\n`;
+    }
     text += `💳 Metode: ${
       order.paymentMethod ? order.paymentMethod.toUpperCase() : '-'
     }\n`;
@@ -328,20 +371,29 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     text += `Terima kasih telah berbelanja! 🙏\n`;
     text += `_Simpan struk ini sebagai bukti pembayaran yang sah._`;
 
-    // 4. Buat URL WhatsApp
+    // --- LOGIKA KIRIM WA ---
     const encodedText = encodeURIComponent(text);
     let waUrl = '';
 
-    if (order.customerPhone) {
+    // Gunakan nomor HP dari ORDER yang tersimpan
+    const phoneTarget = order.customerPhone || customerForm.customerPhone; // Fallback ke form jika di order null
+
+    if (phoneTarget) {
       // Format 08xx -> 628xx
-      let p = order.customerPhone.replace(/\D/g, '');
+      let p = phoneTarget.replace(/\D/g, '');
       if (p.startsWith('0')) p = '62' + p.substring(1);
       waUrl = `https://wa.me/${p}?text=${encodedText}`;
     } else {
-      // Jika tidak ada nomor, buka WA picker agar kasir bisa pilih kontak manual
+      // Jika tidak ada nomor, buka WA picker
       waUrl = `https://wa.me/?text=${encodedText}`;
-      toast.info('Nomor HP kosong, silakan pilih kontak di WhatsApp.');
+      toast.info(
+        'Nomor HP tidak ditemukan di data order, silakan pilih kontak manual.'
+      );
     }
+
+    // ❌ BAGIAN INI DIHAPUS SAJA
+    // Karena order sudah sukses, tidak perlu validasi meja/uang lagi.
+    // Validasi seharusnya dilakukan SEBELUM tombol "Bayar" ditekan, bukan saat kirim struk.
 
     window.open(waUrl, '_blank');
   };
@@ -717,6 +769,45 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
             </div>
           </div>
 
+          {/* ... Pilihan Payment Method (Cash/Debit/QRIS) di atas ... */}
+
+          {/* 🔥 LOGIC INPUT UANG (Hanya muncul jika CASH) */}
+          {customerForm.paymentMethod === 'cash' && (
+            <div className="mt-4 p-3 bg-muted/50 rounded-xl border border-dashed border-border animate-in fade-in zoom-in-95 duration-200">
+              <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">
+                Uang Diterima (Cash)
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-muted-foreground">
+                  Rp
+                </span>
+                <Input
+                  type="number" // Gunakan number agar keyboard HP angka muncul
+                  placeholder="0"
+                  className="pl-9 text-lg font-bold h-11 bg-background"
+                  value={cashGiven || ''} // Handle 0 supaya placeholder muncul
+                  onChange={(e) => setCashGiven(Number(e.target.value))}
+                  autoFocus // Supaya kasir langsung bisa ketik
+                />
+              </div>
+
+              {/* Display Kembalian Real-time */}
+              <div className="flex justify-between items-center mt-3 pt-3 border-t border-border/50">
+                <span className="text-sm font-medium">Kembalian:</span>
+                <span
+                  className={cn(
+                    'text-xl font-bold',
+                    change < 0 ? 'text-destructive' : 'text-green-600'
+                  )}
+                >
+                  {formatRupiah(change)}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* ... DialogFooter di bawah ... */}
+
           <DialogFooter className="flex-row items-center justify-between gap-3 mt-2">
             <div className="flex flex-col">
               <span className="text-xs text-muted-foreground">Total Bayar</span>
@@ -793,6 +884,32 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* --- INVISIBLE RECEIPT TEMPLATE (Hanya muncul saat Print) --- */}
+      <div id="printable-content" className="hidden print:block">
+        {successData && (
+          <ReceiptTemplate
+            orderId={successData.order.id}
+            date={successData.order.createdAt || new Date()}
+            storeName="NexLanding POS"
+            storeAddress="Cabang Utama - Bekasi"
+            cashierName="Kasir" // Bisa ambil dari session jika ada
+            customerName={successData.order.customerName || 'Guest'}
+            // Mapping item dari successData (copy dari cart tadi)
+            items={successData.items.map((item) => ({
+              id: item.id,
+              name: item.name,
+              price: item.price,
+              quantity: item.quantity,
+            }))}
+            totalAmount={successData.order.totalAmount}
+            paymentMethod={successData.order.paymentMethod}
+            // Kirim data uang tunai jika metode bayar Cash
+            cashAmount={successData.cashReceived}
+            changeAmount={successData.change}
+          />
+        )}
+      </div>
     </div>
   );
 }

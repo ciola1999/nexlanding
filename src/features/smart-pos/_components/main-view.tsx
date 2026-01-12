@@ -19,15 +19,20 @@ import POSInterface from './pos-interface';
 import InventoryDashboard from './InventoryDashboard';
 import DashboardAnalytics from './DashboardAnalytics';
 import HistoryList from './HistoryList';
-import LogoutButton from '@/features/smart-pos/_components/logout-button'; // Sesuaikan path
+import LogoutButton from '@/features/smart-pos/_components/logout-button';
 
-// 👇 Import schema database (Pastikan path ini benar sesuai struktur projectmu)
+// Import schema database
 import { Product, Order, OrderItem } from '../db/schema';
-// Jika path '../db/schema' error, coba pakai alias '@' seperti '@/db/schema' atau sesuaikan relatif path-nya.
 
-// 👇 DEFINISI TIPE UTAMA (Diexport agar bisa dipakai di Page & HistoryList)
+// 🔥 UPDATE PENTING DI SINI:
+// Kita definisikan struktur data riwayat agar mengenali kolom Snapshot
 export type HistoryRecord = Order & {
   items: (OrderItem & {
+    // Pastikan UI tahu bahwa kolom ini ada
+    productNameSnapshot: string;
+    skuSnapshot: string | null;
+
+    // Relasi produk (bisa null jika dihapus)
     product: Product | null;
   })[];
 };
@@ -40,18 +45,15 @@ interface NavButtonProps {
   special?: boolean;
 }
 
-// 👇 Update Interface Props
 interface SmartPosMainViewProps {
   products: Product[];
   currentView: string | undefined;
-  // Wajib menerima array history
   transactionHistory: HistoryRecord[];
 }
 
 export default function SmartPosMainView({
   products,
   currentView,
-  // 👇 Berikan default value [] agar tidak error jika data belum siap
   transactionHistory = [],
 }: SmartPosMainViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -68,7 +70,7 @@ export default function SmartPosMainView({
     ? products.filter((p) => p.stock < 20).length
     : 0;
 
-  // --- Awwwards Level Animation ---
+  // --- Animation ---
   useGSAP(
     () => {
       gsap.killTweensOf(containerRef.current);
@@ -132,7 +134,7 @@ export default function SmartPosMainView({
 
             {/* Area List History */}
             <div className="bg-[#18191e]/50 backdrop-blur-sm rounded-3xl border border-white/5 overflow-hidden min-h-[500px] shadow-inner">
-              {/* 👇 Mengirim data ke komponen HistoryList */}
+              {/* Mengirim data ke komponen HistoryList */}
               <HistoryList history={transactionHistory} />
             </div>
           </div>
@@ -190,7 +192,7 @@ export default function SmartPosMainView({
             />
             <div className="w-px h-5 bg-white/10 mx-2 self-center" />
             <div>
-              <LogoutButton /> {/* 👈 Pasang di sini */}
+              <LogoutButton />
             </div>
           </div>
 

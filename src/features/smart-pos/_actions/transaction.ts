@@ -22,12 +22,14 @@ type CheckoutItem = {
   price: number;
 };
 
+// 1. UPDATE: Tambahkan amountPaid ke sini supaya Backend tau user bayar berapa
 type CustomerData = {
   orderType: 'dine_in' | 'take_away';
   paymentMethod: 'cash' | 'debit' | 'qris';
   tableNumber: string;
   customerName?: string;
   customerPhone?: string;
+  amountPaid: number; // 👈 Wajib ada angka uang yang dibayar
 };
 
 export async function processCheckout(
@@ -64,11 +66,22 @@ export async function processCheckout(
 
       const nextQueueNumber = (lastOrderToday?.queueNumber ?? 0) + 1;
 
-      // B. Hitung Total Amount
+      // B. Hitung Total Amount (Backend Calculation is Safer)
       const totalAmount = items.reduce(
         (sum, item) => sum + item.price * item.quantity,
         0
       );
+
+      // 🔥 VALIDASI LOGIC (Backend Guard)
+      // Cek apakah uang pembayaran kurang dari total belanja
+      if (customer.amountPaid < totalAmount) {
+        throw new Error(
+          `Pembayaran kurang! Total: ${totalAmount}, Dibayar: ${customer.amountPaid}`
+        );
+      }
+
+      // 🔥 HITUNG KEMBALIAN
+      const change = customer.amountPaid - totalAmount;
 
       // C. Insert Order Header
       const [insertedOrder] = await tx
@@ -77,6 +90,11 @@ export async function processCheckout(
           totalAmount,
           orderType: customer.orderType,
           paymentMethod: customer.paymentMethod,
+
+          // 👇 FIX: Masukkan variable angkanya, bukan Zod Schema
+          amountPaid: customer.amountPaid,
+          change: change, // Pastikan kolom ini ada di schema.ts kamu
+
           customerName: customer.customerName || 'Guest',
           customerPhone: customer.customerPhone || null,
           tableNumber: finalTableNumber,
@@ -86,10 +104,14 @@ export async function processCheckout(
 
       // D. Insert Items & Update Stock
       for (const item of items) {
-        // Ambil data real dari DB untuk validasi stok & ambil HPP (Cost Price)
         const productInfo = await tx.query.products.findFirst({
           where: eq(products.id, item.id),
-          columns: { costPrice: true, stock: true },
+          columns: {
+            name: true,
+            sku: true,
+            costPrice: true,
+            stock: true,
+          },
         });
 
         if (!productInfo) {
@@ -97,16 +119,19 @@ export async function processCheckout(
         }
 
         if (productInfo.stock < item.quantity) {
-          throw new Error(`Stok untuk produk ID ${item.id} tidak mencukupi.`);
+          throw new Error(
+            `Stok untuk produk "${productInfo.name}" tidak mencukupi.`
+          );
         }
 
-        // Insert Detail
         await tx.insert(orderItems).values({
           orderId: insertedOrder.id,
           productId: item.id,
           quantity: item.quantity,
           priceAtTime: item.price,
           costPriceAtTime: productInfo.costPrice || '0',
+          productNameSnapshot: productInfo.name,
+          skuSnapshot: productInfo.sku || null,
         });
 
         // Kurangi Stok
@@ -131,8 +156,7 @@ export async function processCheckout(
   } catch (error) {
     console.error('Checkout Error:', error);
 
-    // --- FIX: TYPE SAFETY ERROR HANDLING ---
-    // Kita cek apakah error adalah instance dari Error standar JS
+    // Tips: Jika error manual yang kita throw di atas, pesan errornya akan muncul di sini
     const errorMessage =
       error instanceof Error ? error.message : 'Gagal memproses transaksi.';
 

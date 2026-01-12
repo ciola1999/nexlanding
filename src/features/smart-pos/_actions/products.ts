@@ -92,59 +92,56 @@ export async function getProducts(
   }
 }
 
-// --- 3. ACTION: Delete Products (SMART DELETE & TYPE SAFE) ---
+// src/actions/products.ts (atau lokasi file kamu)
+
+// ... imports tetap sama ...
+
+// --- 3. ACTION: Delete Products (REVISI: HARD DELETE AMAN) ---
 export async function deleteProductsAction(ids: number[]) {
   try {
     if (ids.length === 0) {
       return { success: false, message: 'Tidak ada produk dipilih' };
     }
 
-    // A. COBA HAPUS PERMANEN (HARD DELETE)
+    // 🔥 LANGKAH 1: Ambil URL gambar sebelum data dihapus
+    // Kita perlu menghapus file di Supabase Storage agar hemat biaya & bersih
+    const productsToDelete = await db
+      .select({ imageUrl: products.imageUrl })
+      .from(products)
+      .where(inArray(products.id, ids));
+
+    // Filter produk yang punya gambar saja
+    const imagePaths = productsToDelete
+      .map((p) => {
+        if (!p.imageUrl) return null;
+        // Ekstrak nama file dari URL publik Supabase
+        // Format biasanya: .../storage/v1/object/public/products/NAMA_FILE.jpg
+        const parts = p.imageUrl.split('/');
+        return parts[parts.length - 1]; // Ambil bagian terakhir (nama file)
+      })
+      .filter((path): path is string => path !== null);
+
+    // 🔥 LANGKAH 2: Hapus Gambar di Supabase Storage (Background process)
+    if (imagePaths.length > 0) {
+      await supabase.storage.from('products').remove(imagePaths);
+    }
+
+    // 🔥 LANGKAH 3: Hapus Data di Database
+    // Tidak perlu try-catch error '23503' lagi.
+    // Karena di Schema sudah "onDelete: set null", database akan otomatis:
+    // 1. Menghapus produk di tabel `products`.
+    // 2. Mengubah `product_id` di tabel `order_items` menjadi NULL.
+    // 3. Membiarkan riwayat transaksi tetap aman (karena ada snapshot).
     await db.delete(products).where(inArray(products.id, ids));
 
     revalidatePath('/projects/smart-pos');
 
     return {
       success: true,
-      message: `Berhasil menghapus permanen ${ids.length} produk.`,
+      message: `Berhasil menghapus permanen ${ids.length} produk & gambarnya.`,
     };
-  } catch (error: unknown) {
-    // Gunakan 'unknown' agar aman
-
-    // B. PENANGANAN ERROR TYPE-SAFE
-    if (isDatabaseError(error)) {
-      // Ambil kode error, baik dari level atas maupun dari wrapper Drizzle (.cause)
-      const errorCode = error.code || error.cause?.code;
-
-      // Code '23503' = Foreign Key Violation (Data dipakai di tabel lain)
-      if (errorCode === '23503') {
-        console.log(
-          'Produk terkunci relasi transaksi. Beralih ke Soft Delete...'
-        );
-
-        try {
-          // C. FALLBACK: SOFT DELETE (ARCHIVE)
-          await db
-            .update(products)
-            .set({ isActive: false })
-            .where(inArray(products.id, ids));
-
-          revalidatePath('/projects/smart-pos');
-
-          return {
-            success: true,
-            message:
-              'Produk memiliki riwayat transaksi. Produk telah DIARSIPKAN (Non-Aktif) agar data aman.',
-          };
-        } catch (updateError) {
-          console.error('Soft Delete Gagal:', updateError);
-          return { success: false, message: 'Gagal mengarsipkan produk.' };
-        }
-      }
-    }
-
-    // Log error lain yang tidak terduga
-    console.error('Delete error (Unknown):', error);
+  } catch (error) {
+    console.error('Delete error:', error);
     return {
       success: false,
       message: 'Terjadi kesalahan sistem saat menghapus.',

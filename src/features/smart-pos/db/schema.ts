@@ -78,6 +78,8 @@ export const orders = pgTable('orders', {
   // Sebelumnya kamu pakai varchar, sekarang kita kunci pakai ENUM.
   // Ini bikin kode TypeScript kamu 100% Type-Safe (tidak bisa typo 'debit' jadi 'deibt')
   paymentMethod: paymentMethodEnum('payment_method').notNull().default('cash'),
+  amountPaid: integer('amount_paid').notNull(), // 👈 Tambahan: Uang dari konsumen
+  change: integer('change').notNull().default(0),
 
   tableNumber: text('table_number'),
 
@@ -95,16 +97,28 @@ export const orders = pgTable('orders', {
 // Tabel Item Transaksi (Detail)
 export const orderItems = pgTable('order_items', {
   id: serial('id').primaryKey(),
+
   orderId: integer('order_id')
-    .references(() => orders.id)
+    .references(() => orders.id, { onDelete: 'cascade' }) // Jika order dihapus, item ikut terhapus
     .notNull(),
-  productId: integer('product_id')
-    .references(() => products.id)
-    .notNull(),
+
+  // 🔥 UPDATE 1: Foreign Key diubah agar mendukung penghapusan produk
+  productId: integer('product_id').references(() => products.id, {
+    onDelete: 'set null', // KUNCI UTAMA: Jika produk dihapus, kolom ini jadi NULL
+  }),
+  // Hapus .notNull() di sini agar valid saat nilainya NULL
+
+  // 🔥 UPDATE 2: Snapshot Nama Produk & SKU
+  // Wajib ada, karena jika productId NULL, kita ambil nama dari sini untuk UI
+  productNameSnapshot: text('product_name_snapshot').notNull(),
+  skuSnapshot: text('sku_snapshot'), // Opsional, berguna untuk audit gudang
+
   quantity: integer('quantity').notNull(),
+
+  // Kamu sudah punya ini (Bagus!)
   priceAtTime: integer('price_at_time').notNull(),
-  // BARU: HPP saat transaksi terjadi (SNAPSHOT)
-  // Ini kunci untuk menghitung Realized Profit per transaksi
+
+  // Kamu sudah punya ini (Bagus!)
   costPriceAtTime: decimal('cost_price_at_time', {
     precision: 15,
     scale: 2,

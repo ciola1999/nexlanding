@@ -8,22 +8,26 @@ import {
   ShoppingBag,
   Calendar,
   CreditCard,
-  PackageX,
+  PackageX, // Icon untuk produk terhapus
   User,
   Phone,
   Armchair,
   Hash,
-  QrCode, // Icon Baru
-  Banknote, // Icon Baru
-  MessageCircle, // Icon untuk WA
+  QrCode,
+  Banknote,
+  MessageCircle,
+  AlertCircle,
 } from 'lucide-react';
-import { cn } from '@/lib/utils'; // Pastikan import cn utility kamu
+import { cn } from '@/lib/utils';
 
-// Tipe Data sesuai Schema/Action
+// --- 1. UPDATE TYPE DEFINITION ---
+// Kita sesuaikan dengan data snapshot baru dari DB
 type HistoryItem = {
   id: number;
   totalAmount: number;
-  // Update Type: String literal agar autocomplete jalan
+  // 🔥 TAMBAHKAN 2 BARIS INI:
+  amountPaid: number | null;
+  change: number | null;
   paymentMethod: 'cash' | 'debit' | 'qris' | string;
   tableNumber: string | null;
   customerName?: string | null;
@@ -34,6 +38,12 @@ type HistoryItem = {
     id: number;
     quantity: number;
     priceAtTime: number;
+
+    // 🔥 DATA SNAPSHOT (Wajib Ada)
+    productNameSnapshot: string;
+    skuSnapshot: string | null;
+
+    // Data Relasi (Bisa NULL jika produk dihapus)
     product: {
       name: string;
     } | null;
@@ -44,7 +54,6 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  // 1. FORMAT RUPIAH
   const formatRupiah = (val: number) => {
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
@@ -54,7 +63,6 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
     }).format(val);
   };
 
-  // 2. FORMAT TANGGAL
   const formatDate = (dateInput: Date | string | null) => {
     if (!dateInput) return '-';
     const date = new Date(dateInput);
@@ -71,7 +79,6 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
       .replace(/\./g, ':');
   };
 
-  // 3. HELPER: WARNA & ICON PEMBAYARAN
   const getPaymentBadge = (method: string) => {
     const m = method.toLowerCase();
     switch (m) {
@@ -100,16 +107,13 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
     }
   };
 
-  // 4. ACTION: OPEN WHATSAPP
   const handleOpenWA = (phone: string | null | undefined) => {
     if (!phone) return;
-    // Bersihkan format nomor (08xx -> 628xx)
     let p = phone.replace(/\D/g, '');
     if (p.startsWith('0')) p = '62' + p.substring(1);
     window.open(`https://wa.me/${p}`, '_blank');
   };
 
-  // ANIMASI
   useGSAP(
     () => {
       if (!containerRef.current) return;
@@ -145,7 +149,6 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
   return (
     <div ref={containerRef} className="flex flex-col w-full pb-20">
       {history.map((order) => {
-        // Ambil styling badge berdasarkan metode pembayaran
         const badge = getPaymentBadge(order.paymentMethod);
         const PaymentIcon = badge.icon;
 
@@ -165,7 +168,6 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
             >
               {/* Kiri: Icon & Info Utama */}
               <div className="flex items-start sm:items-center gap-4">
-                {/* ICON PEMBAYARAN DENGAN WARNA DINAMIS */}
                 <div
                   className={cn(
                     'w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border shadow-lg bg-gradient-to-br',
@@ -208,7 +210,6 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
                   <div className="text-lg font-bold text-white tracking-tight">
                     {formatRupiah(order.totalAmount)}
                   </div>
-                  {/* Label Metode Pembayaran */}
                   <div className="flex items-center justify-end gap-1.5 text-[10px] text-gray-500 uppercase font-bold tracking-widest mt-0.5">
                     <PaymentIcon size={10} />
                     {badge.label}
@@ -259,7 +260,7 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
                       </span>
                     </div>
 
-                    {/* Nama Pelanggan */}
+                    {/* Pelanggan */}
                     <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-white/5 border border-white/5">
                       <span className="text-gray-500 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold">
                         <User size={12} /> Pelanggan
@@ -269,7 +270,7 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
                       </span>
                     </div>
 
-                    {/* No HP & Tombol WA */}
+                    {/* No HP */}
                     <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-white/5 border border-white/5 relative group">
                       <span className="text-gray-500 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold">
                         <Phone size={12} /> No. HP
@@ -278,7 +279,6 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
                         <span className="text-white font-medium truncate">
                           {order.customerPhone || '-'}
                         </span>
-                        {/* Tombol WA Muncul jika ada nomor HP */}
                         {order.customerPhone && (
                           <button
                             onClick={(e) => {
@@ -295,7 +295,7 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
                     </div>
                   </div>
 
-                  {/* TABEL ITEM */}
+                  {/* TABEL ITEM - BAGIAN KRUSIAL YANG DIUBAH */}
                   <div className="border border-white/5 rounded-xl overflow-hidden bg-[#121317]">
                     <table className="w-full text-sm text-left text-gray-300">
                       <thead className="text-[10px] text-gray-500 uppercase bg-white/5 tracking-wider">
@@ -313,44 +313,101 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-white/5">
-                        {order.items.map((item) => (
-                          <tr
-                            key={item.id}
-                            className="hover:bg-white/[0.02] transition-colors group"
-                          >
-                            <td className="px-4 py-3">
-                              {item.product ? (
-                                <span className="text-white group-hover:text-[#dfff4f] transition-colors font-medium">
-                                  {item.product.name}
-                                </span>
-                              ) : (
-                                <span className="text-red-400 italic flex items-center gap-1 text-xs">
-                                  <PackageX size={12} /> Produk Dihapus
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-right text-gray-500 font-mono text-xs">
-                              {formatRupiah(item.priceAtTime)}
-                            </td>
-                            <td className="px-4 py-3 text-center text-white text-xs font-bold">
-                              x{item.quantity}
-                            </td>
-                            <td className="px-4 py-3 text-right text-white font-bold font-mono text-xs">
-                              {formatRupiah(item.priceAtTime * item.quantity)}
-                            </td>
-                          </tr>
-                        ))}
+                        {order.items.map((item) => {
+                          // Cek apakah produk masih ada di Master Data
+                          const isProductDeleted = !item.product;
+
+                          return (
+                            <tr
+                              key={item.id}
+                              className="hover:bg-white/[0.02] transition-colors group"
+                            >
+                              <td className="px-4 py-3">
+                                <div className="flex flex-col">
+                                  {/* 🔥 SOLUSI: Gunakan productNameSnapshot */}
+                                  <span
+                                    className={cn(
+                                      'font-medium transition-colors',
+                                      isProductDeleted
+                                        ? 'text-gray-400'
+                                        : 'text-white group-hover:text-[#dfff4f]'
+                                    )}
+                                  >
+                                    {item.productNameSnapshot}
+                                  </span>
+
+                                  {/* Tampilkan SKU Snapshot jika ada */}
+                                  {item.skuSnapshot && (
+                                    <span className="text-[10px] text-gray-600 font-mono">
+                                      {item.skuSnapshot}
+                                    </span>
+                                  )}
+
+                                  {/* 🔥 Badge jika produk sudah dihapus dari master */}
+                                  {isProductDeleted && (
+                                    <span className="mt-1 inline-flex items-center gap-1 text-[10px] text-red-400 bg-red-900/10 px-1.5 py-0.5 rounded border border-red-500/20 w-fit">
+                                      <PackageX size={10} /> Discontinue
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-right text-gray-500 font-mono text-xs">
+                                {formatRupiah(item.priceAtTime)}
+                              </td>
+                              <td className="px-4 py-3 text-center text-white text-xs font-bold">
+                                x{item.quantity}
+                              </td>
+                              <td className="px-4 py-3 text-right text-white font-bold font-mono text-xs">
+                                {formatRupiah(item.priceAtTime * item.quantity)}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
 
-                    {/* Total Footer */}
-                    <div className="px-4 py-3 bg-[#dfff4f]/5 flex justify-between items-center border-t border-[#dfff4f]/10">
-                      <span className="text-xs text-[#dfff4f] uppercase font-bold tracking-widest">
-                        Total Transaksi
-                      </span>
-                      <span className="text-base font-bold text-[#dfff4f]">
-                        {formatRupiah(order.totalAmount)}
-                      </span>
+                    {/* Total Footer - UPDATE BAGIAN INI */}
+                    <div className="bg-[#dfff4f]/5 border-t border-[#dfff4f]/10 p-4">
+                      <div className="flex flex-col gap-2">
+                        {/* Baris Total Utama */}
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-[#dfff4f] uppercase font-bold tracking-widest">
+                            Total Tagihan
+                          </span>
+                          <span className="text-base font-bold text-[#dfff4f]">
+                            {formatRupiah(order.totalAmount)}
+                          </span>
+                        </div>
+
+                        {/* 🔥 Tampilkan Detail Uang Tunai jika CASH */}
+                        {order.paymentMethod === 'cash' && (
+                          <>
+                            <div className="w-full h-px bg-white/5 my-1" />{' '}
+                            {/* Separator tipis */}
+                            <div className="flex justify-between items-center text-xs text-gray-400">
+                              <span>Tunai Diterima</span>
+                              <span className="font-mono text-gray-300">
+                                {formatRupiah(
+                                  order.amountPaid || order.totalAmount
+                                )}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-gray-400">Kembalian</span>
+                              <span
+                                className={cn(
+                                  'font-mono font-bold',
+                                  (order.change || 0) < 0
+                                    ? 'text-red-400'
+                                    : 'text-emerald-400'
+                                )}
+                              >
+                                {formatRupiah(order.change || 0)}
+                              </span>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
