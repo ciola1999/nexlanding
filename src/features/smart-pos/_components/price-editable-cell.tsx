@@ -33,7 +33,7 @@ export function PriceEditableCell({
     (state, newPrice: number) => newPrice
   );
 
-  // Business Logic: Smart Margin (Hanya untuk perhitungan background)
+  // Business Logic: Smart Margin
   const targetMargin = 0.3;
   const rawSuggestedPrice = costPrice > 0 ? costPrice / (1 - targetMargin) : 0;
   const suggestedPrice = Math.ceil(rawSuggestedPrice / 100) * 100;
@@ -53,10 +53,12 @@ export function PriceEditableCell({
 
   const handleSave = async (val: number) => {
     if (val < 0) return;
-    setIsEditing(false);
+    setIsEditing(false); // 1. Tutup popup
+
     if (val === initialPrice) return;
 
-    setIsLoading(true);
+    setIsLoading(true); // 2. Set loading state
+
     startTransition(async () => {
       setOptimisticPrice(val);
       const result = await updateProductPrice(id, val);
@@ -79,11 +81,10 @@ export function PriceEditableCell({
     }
   };
 
-  // --- MODE EDIT (CLEAN & MINIMAL) ---
+  // --- MODE EDIT (Sama, Tidak Berubah) ---
   if (isEditing) {
     return (
       <div className="relative flex justify-center min-h-[30px]">
-        {/* Backdrop transparent untuk click outside */}
         <div
           className="fixed inset-0 z-40"
           onClick={() => setIsEditing(false)}
@@ -92,14 +93,13 @@ export function PriceEditableCell({
         <div
           className={cn(
             'absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50',
-            'flex flex-col gap-1 p-1 min-w-[130px]', // Ukuran pas, tidak terlalu lebar
-            'bg-[#121317] border border-[#dfff4f]', // Single Border Neon
+            'flex flex-col gap-1 p-1 min-w-[130px]',
+            'bg-[#121317] border border-[#dfff4f]',
             'rounded-lg shadow-xl shadow-black/50',
             'animate-in zoom-in-95 duration-150'
           )}
         >
           <div className="relative flex items-center">
-            {/* Label Rp minimalis */}
             <span className="absolute left-2 text-[#dfff4f]/70 font-mono text-xs pointer-events-none">
               Rp
             </span>
@@ -111,14 +111,14 @@ export function PriceEditableCell({
               className={cn(
                 'w-full bg-transparent text-white text-right font-mono font-bold text-sm',
                 'pl-8 pr-2 py-1.5',
-                'outline-none border-none ring-0', // Hapus border input bawaan
+                'outline-none border-none ring-0',
                 '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
               )}
               onKeyDown={handleKeyDown}
             />
           </div>
 
-          {/* Tombol Auto Fix: Muncul kecil saja jika perlu */}
+          {/* Tombol Auto Fix */}
           {costPrice > 0 && isLowMargin && (
             <button
               onClick={() => handleSave(suggestedPrice)}
@@ -134,12 +134,14 @@ export function PriceEditableCell({
     );
   }
 
-  // --- MODE DISPLAY ---
+  // --- MODE DISPLAY (UPDATED) ---
   return (
     <div
       onClick={() => setIsEditing(true)}
       className={cn(
-        'group/price relative cursor-pointer flex items-center justify-end gap-2 py-1.5 px-2 rounded-lg transition-all',
+        // 🔥 PERBAIKAN UTAMA: w-fit + ml-auto
+        // Ini memastikan container "memeluk" teks harga, sehingga icon di sebelah kirinya selalu pas posisinya.
+        'group/price relative w-fit ml-auto cursor-pointer flex items-center justify-end gap-2 py-1.5 px-2 rounded-lg transition-all',
         'hover:bg-white/5 border border-transparent hover:border-white/10'
       )}
     >
@@ -160,9 +162,10 @@ export function PriceEditableCell({
             {formatRupiah(optimisticPrice)}
           </span>
 
+          {/* Icon Position: Absolute di kiri container */}
           <PencilLine
             size={12}
-            className="opacity-0 group-hover/price:opacity-50 text-gray-500 transition-opacity absolute right-full mr-1"
+            className="absolute right-full mr-2 opacity-0 group-hover/price:opacity-100 text-gray-500 hover:text-[#dfff4f] transition-all"
           />
         </>
       )}

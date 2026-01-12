@@ -71,7 +71,7 @@ export function StockEditableCell({
           // Base styles
           'text-center font-mono font-bold text-xs rounded-md border transition-all outline-none',
           // Size adjustments (Lebih ramping)
-          'w-16 py-1',
+          'w-12 py-1',
           // Hide Spinner (Membuang panah up/down bawaan browser)
           '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
           // Colors

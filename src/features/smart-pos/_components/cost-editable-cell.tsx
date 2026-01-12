@@ -37,11 +37,12 @@ export function CostEditableCell({ id, initialCost }: CostEditableCellProps) {
 
   const handleSave = async (val: number) => {
     if (val < 0) return;
-    setIsEditing(false);
+    setIsEditing(false); // 1. Tutup mode edit
 
     if (val === initialCost) return;
 
-    setIsEditing(true);
+    setIsLoading(true); // 2. 🔥 PERBAIKAN: Set loading, BUKAN isEditing(true)
+
     startTransition(async () => {
       setOptimisticCost(val);
       const result = await updateProductCost(id, val);
@@ -64,7 +65,7 @@ export function CostEditableCell({ id, initialCost }: CostEditableCellProps) {
     }
   };
 
-  // --- MODE EDIT (TETAP SAMA) ---
+  // --- MODE EDIT (Sama seperti Price) ---
   if (isEditing) {
     return (
       <div className="relative flex justify-center min-h-[30px]">
@@ -77,7 +78,7 @@ export function CostEditableCell({ id, initialCost }: CostEditableCellProps) {
           className={cn(
             'absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50',
             'flex items-center gap-1 p-1 min-w-[130px]',
-            'bg-[#121317] border border-[#dfff4f]',
+            'bg-[#121317] border border-[#dfff4f]', // Border Neon
             'rounded-lg shadow-xl shadow-black/50',
             'animate-in zoom-in-95 duration-150'
           )}
@@ -103,32 +104,30 @@ export function CostEditableCell({ id, initialCost }: CostEditableCellProps) {
     );
   }
 
-  // --- MODE DISPLAY (DIPERBAIKI) ---
+  // --- MODE DISPLAY (SUDAH DIPERBAIKI) ---
   return (
     <div
       onClick={() => setIsEditing(true)}
       className={cn(
-        // Tambahkan relative agar icon bisa di-absolute terhadap container ini
-        'group/cost relative cursor-pointer flex items-center justify-end gap-2 py-1.5 px-4 rounded-lg transition-all',
+        // 🔥 TRICK: w-fit + ml-auto membuat container mengecil seukuran teks & rapat kanan
+        // Ini kunci agar icon 'absolute' posisinya selalu nempel di sebelah kiri angka
+        'group/cost relative w-fit ml-auto cursor-pointer flex items-center justify-end gap-2 py-1.5 px-2 rounded-lg transition-all',
         'hover:bg-white/5 border border-transparent hover:border-white/10'
       )}
     >
       {isLoading ? (
-        <Loader2 className="animate-spin text-gray-500 mr-2" size={14} />
+        <Loader2 className="animate-spin text-gray-500" size={14} />
       ) : (
         <>
-          {/* 👇 PERUBAHAN DISINI: 
-              1. Icon ditaruh SEBELUM angka.
-              2. Menggunakan absolute left-2 (atau left-4) agar menempel di kiri container.
-          */}
-          <PencilLine
-            size={12}
-            className="absolute left-4 opacity-0 group-hover/cost:opacity-100 text-gray-500 hover:text-[#dfff4f] transition-all"
-          />
-
           <span className="text-gray-400 font-mono font-medium text-sm transition-colors group-hover/cost:text-gray-200">
             {formatRupiah(optimisticCost)}
           </span>
+
+          {/* 🔥 POSISI ICON: Ditaruh di sebelah kiri container */}
+          <PencilLine
+            size={12}
+            className="absolute right-full mr-2 opacity-0 group-hover/cost:opacity-100 text-gray-500 hover:text-[#dfff4f] transition-all"
+          />
         </>
       )}
     </div>
