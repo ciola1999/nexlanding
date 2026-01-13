@@ -14,6 +14,7 @@ export async function getTransactionHistory() {
             product: true, // Ambil nama produk relasi
           },
         },
+        payments: true, // Ambil detail pembayaran relasi
       },
     });
 

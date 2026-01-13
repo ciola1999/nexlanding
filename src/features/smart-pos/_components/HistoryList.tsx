@@ -8,7 +8,7 @@ import {
   ShoppingBag,
   Calendar,
   CreditCard,
-  PackageX, // Icon untuk produk terhapus
+  PackageX,
   User,
   Phone,
   Armchair,
@@ -16,34 +16,36 @@ import {
   QrCode,
   Banknote,
   MessageCircle,
-  AlertCircle,
+  PieChart, // 🔥 Tambahkan Icon PieChart untuk Split
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // --- 1. UPDATE TYPE DEFINITION ---
-// Kita sesuaikan dengan data snapshot baru dari DB
 type HistoryItem = {
   id: number;
   totalAmount: number;
-  // 🔥 TAMBAHKAN 2 BARIS INI:
   amountPaid: number | null;
   change: number | null;
-  paymentMethod: 'cash' | 'debit' | 'qris' | string;
+  paymentMethod: 'cash' | 'debit' | 'qris' | 'split' | string; // Tambah 'split'
   tableNumber: string | null;
   customerName?: string | null;
   customerPhone?: string | null;
   queueNumber: number;
   createdAt: Date | string | null;
+
+  // 🔥 TAMBAHKAN ARRAY PAYMENTS DISINI
+  payments: {
+    id: number;
+    paymentMethod: 'cash' | 'debit' | 'qris' | 'split' | string; // Tambah 'split'
+    amount: number;
+  }[];
+
   items: {
     id: number;
     quantity: number;
     priceAtTime: number;
-
-    // 🔥 DATA SNAPSHOT (Wajib Ada)
     productNameSnapshot: string;
     skuSnapshot: string | null;
-
-    // Data Relasi (Bisa NULL jika produk dihapus)
     product: {
       name: string;
     } | null;
@@ -79,6 +81,7 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
       .replace(/\./g, ':');
   };
 
+  // --- 2. UPDATE BADGE LOGIC ---
   const getPaymentBadge = (method: string) => {
     const m = method.toLowerCase();
     switch (m) {
@@ -95,6 +98,14 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
             'from-blue-500/20 to-blue-900/10 text-blue-400 border-blue-500/20',
           icon: CreditCard,
           label: 'DEBIT',
+        };
+      // 🔥 CASE BARU UNTUK SPLIT
+      case 'split':
+        return {
+          colorClass:
+            'from-orange-500/20 to-orange-900/10 text-orange-400 border-orange-500/20',
+          icon: PieChart,
+          label: 'SPLIT',
         };
       case 'cash':
       default:
@@ -295,7 +306,7 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
                     </div>
                   </div>
 
-                  {/* TABEL ITEM - BAGIAN KRUSIAL YANG DIUBAH */}
+                  {/* TABEL ITEM */}
                   <div className="border border-white/5 rounded-xl overflow-hidden bg-[#121317]">
                     <table className="w-full text-sm text-left text-gray-300">
                       <thead className="text-[10px] text-gray-500 uppercase bg-white/5 tracking-wider">
@@ -314,9 +325,7 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
                       </thead>
                       <tbody className="divide-y divide-white/5">
                         {order.items.map((item) => {
-                          // Cek apakah produk masih ada di Master Data
                           const isProductDeleted = !item.product;
-
                           return (
                             <tr
                               key={item.id}
@@ -324,7 +333,6 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
                             >
                               <td className="px-4 py-3">
                                 <div className="flex flex-col">
-                                  {/* 🔥 SOLUSI: Gunakan productNameSnapshot */}
                                   <span
                                     className={cn(
                                       'font-medium transition-colors',
@@ -335,15 +343,11 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
                                   >
                                     {item.productNameSnapshot}
                                   </span>
-
-                                  {/* Tampilkan SKU Snapshot jika ada */}
                                   {item.skuSnapshot && (
                                     <span className="text-[10px] text-gray-600 font-mono">
                                       {item.skuSnapshot}
                                     </span>
                                   )}
-
-                                  {/* 🔥 Badge jika produk sudah dihapus dari master */}
                                   {isProductDeleted && (
                                     <span className="mt-1 inline-flex items-center gap-1 text-[10px] text-red-400 bg-red-900/10 px-1.5 py-0.5 rounded border border-red-500/20 w-fit">
                                       <PackageX size={10} /> Discontinue
@@ -366,7 +370,7 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
                       </tbody>
                     </table>
 
-                    {/* Total Footer - UPDATE BAGIAN INI */}
+                    {/* --- 3. UI FOOTER (UPDATED UNTUK SPLIT) --- */}
                     <div className="bg-[#dfff4f]/5 border-t border-[#dfff4f]/10 p-4">
                       <div className="flex flex-col gap-2">
                         {/* Baris Total Utama */}
@@ -379,11 +383,41 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
                           </span>
                         </div>
 
-                        {/* 🔥 Tampilkan Detail Uang Tunai jika CASH */}
+                        {/* --- LOGIKA TAMPILAN PEMBAYARAN --- */}
+
+                        {/* A. JIKA SPLIT PAYMENT */}
+                        {/* --- UI BAGIAN SPLIT --- */}
+                        {/* A. JIKA SPLIT PAYMENT */}
+                        {order.paymentMethod === 'split' &&
+                          order.payments &&
+                          order.payments.length > 0 && (
+                            <div className="mt-1 pt-2 border-t border-dashed border-white/10 flex flex-col gap-1.5">
+                              <span className="text-[10px] text-orange-400 uppercase font-bold tracking-wider mb-1">
+                                Rincian Pembayaran (Split)
+                              </span>
+                              {order.payments.map((p) => (
+                                <div
+                                  key={p.id} // Gunakan p.id dari schema
+                                  className="flex justify-between items-center text-xs"
+                                >
+                                  <span className="text-gray-400 uppercase flex items-center gap-2">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-orange-500/50"></span>
+
+                                    {/* 🔥 GUNAKAN p.paymentMethod SESUAI SCHEMA */}
+                                    {p.paymentMethod.toUpperCase()}
+                                  </span>
+                                  <span className="font-mono text-gray-300">
+                                    {formatRupiah(p.amount)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                        {/* B. JIKA CASH PAYMENT */}
                         {order.paymentMethod === 'cash' && (
                           <>
-                            <div className="w-full h-px bg-white/5 my-1" />{' '}
-                            {/* Separator tipis */}
+                            <div className="w-full h-px bg-white/5 my-1" />
                             <div className="flex justify-between items-center text-xs text-gray-400">
                               <span>Tunai Diterima</span>
                               <span className="font-mono text-gray-300">

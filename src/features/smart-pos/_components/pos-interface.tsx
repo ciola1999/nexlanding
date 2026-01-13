@@ -71,13 +71,6 @@ interface CustomerFormState {
   paymentMethod: 'cash' | 'debit' | 'qris'; // Update agar sesuai db
 }
 
-interface SuccessData {
-  order: Order;
-  items: CartItem[];
-  cashReceived?: number; // <--- Tambahkan ini
-  change?: number;
-}
-
 export default function POSInterface({ initialProducts }: POSInterfaceProps) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -87,6 +80,20 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
   const [searchQuery, setSearchQuery] = React.useState('');
   const [isPending, startTransition] = useTransition();
   const [isInitialized, setIsInitialized] = React.useState(false);
+  // State untuk Split Bill
+  const [isSplitMode, setIsSplitMode] = React.useState(false);
+  const [splitPayments, setSplitPayments] = React.useState<
+    { method: 'cash' | 'debit' | 'qris'; amount: number; referenceId: string }[]
+  >([]);
+  // 👇 TAMBAHKAN INI (Hitung Kembalian Otomatis)
+  const subtotal = useMemo(
+    () => cart.reduce((acc, item) => acc + item.price * item.quantity, 0),
+    [cart]
+  );
+
+  // Hitung sisa tagihan untuk Split Bill
+  const totalPaidSplit = splitPayments.reduce((sum, p) => sum + p.amount, 0);
+  const remainingSplit = subtotal - totalPaidSplit;
 
   // UI States
   const [isCheckoutOpen, setIsCheckoutOpen] = React.useState(false);
@@ -109,6 +116,7 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     items: CartItem[];
     cashReceived?: number;
     change?: number;
+    payments?: { method: string; amount: number }[];
   } | null>(null);
 
   // --- INIT & LOCAL STORAGE ---
@@ -260,16 +268,12 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     );
   };
 
-  // 👇 TAMBAHKAN INI (Hitung Kembalian Otomatis)
-  const subtotal = useMemo(
-    () => cart.reduce((acc, item) => acc + item.price * item.quantity, 0),
-    [cart]
-  );
-
   // Hitung kembalian real-time
   const change = cashGiven - subtotal;
 
   // --- CHECKOUT ---
+  // --- CHECKOUT (REVISI) ---
+  // --- CHECKOUT (SUDAH DIPERBAIKI UTK SPLIT BILL) ---
   const handleCheckout = async () => {
     // 1. Validasi Meja (Dine In)
     if (
@@ -280,25 +284,56 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
       return;
     }
 
-    // 2. 🔥 Validasi Uang Tunai (Client Side Guard)
-    if (customerForm.paymentMethod === 'cash' && cashGiven < subtotal) {
-      toast.error('Uang tunai kurang!', {
-        description: `Kurang ${formatRupiah(subtotal - cashGiven)}`,
-      });
-      return;
-    }
+    // 2. SIAPKAN DATA PEMBAYARAN (Final Payments)
+    let finalPayments = [];
 
-    startTransition(async () => {
-      // 3. 🔥 Tentukan Amount Paid untuk Backend
-      // Jika Cash: pakai input user. Jika QRIS/Debit: anggap bayar pas (sesuai tagihan)
-      const finalAmountPaid =
+    if (isSplitMode) {
+      // --- LOGIC SPLIT BILL ---
+      // Cek apakah pembayaran sudah lunas?
+      if (remainingSplit > 0) {
+        toast.error(`Pembayaran kurang ${formatRupiah(remainingSplit)}`);
+        return;
+      }
+      if (splitPayments.length === 0) {
+        toast.error('Belum ada pembayaran yang dimasukkan');
+        return;
+      }
+      finalPayments = splitPayments;
+    } else {
+      // --- LOGIC PEMBAYARAN BIASA (Single) ---
+      // Validasi Uang Tunai jika Cash
+      if (customerForm.paymentMethod === 'cash' && cashGiven < subtotal) {
+        toast.error('Uang tunai kurang!', {
+          description: `Kurang ${formatRupiah(subtotal - cashGiven)}`,
+        });
+        return;
+      }
+
+      const amount =
         customerForm.paymentMethod === 'cash' ? cashGiven : subtotal;
 
+      finalPayments = [
+        {
+          method: customerForm.paymentMethod,
+          amount: amount,
+          referenceId: '',
+        },
+      ];
+    }
+
+    // 3. PROSES KE DATABASE
+    startTransition(async () => {
       const res = await processCheckout(
         cart.map((i) => ({ id: i.id, quantity: i.quantity, price: i.price })),
         {
-          ...customerForm,
-          amountPaid: finalAmountPaid, // 👈 Kirim data ini ke Backend
+          // Spread data form
+          orderType: customerForm.orderType,
+          tableNumber: customerForm.tableNumber,
+          customerName: customerForm.customerName,
+          customerPhone: customerForm.customerPhone,
+
+          // 🔥 KIRIM ARRAY PEMBAYARAN (SPLIT ATAU SINGLE)
+          payments: finalPayments,
         }
       );
 
@@ -306,11 +341,17 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
         setSuccessData({
           order: res.data,
           items: [...cart],
-          cashReceived: finalAmountPaid,
-          change: finalAmountPaid - subtotal,
+          // 👇 TAMBAHKAN 2 BARIS INI AGAR STRUK MUNCUL ANGKA DUITNYA 👇
+          cashReceived: isSplitMode ? subtotal : cashGiven,
+          change: isSplitMode ? 0 : cashGiven - subtotal,
+          payments: finalPayments,
         });
+
+        // Reset State
         setCart([]);
-        setCashGiven(0); // Reset
+        setCashGiven(0);
+        setIsSplitMode(false); // Reset mode split
+        setSplitPayments([]); // Reset array split
         setIsCheckoutOpen(false);
         setIsCartSheetOpen(false);
         setCustomerForm({
@@ -332,16 +373,18 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     // 1. Cek ketersediaan data sukses
     if (!successData || !successData.order) return;
 
-    const { order, items } = successData;
+    // Ambil juga 'payments' dari successData
+    const { order, items, payments } = successData;
 
     // --- PEMBUATAN TEXT STRUK ---
     let text = `*STRUK PEMBAYARAN - NEXPOS*\n`;
     text += `--------------------------------\n`;
-    text += `📅 Tanggal: ${new Date().toLocaleDateString('id-ID')}\n`;
-    text += `🧾 Order ID: #${order.id}\n`;
+    text += `📅 Tgl: ${new Date().toLocaleDateString(
+      'id-ID'
+    )} ${new Date().toLocaleTimeString('id-ID')}\n`; // Tambah jam biar detail
+    text += `🧾 No: #${order.id}\n`;
     text += `👤 Pelanggan: ${order.customerName || 'Guest'}\n`;
 
-    // Gunakan data dari ORDER, bukan customerForm
     if (order.tableNumber) {
       text += `🪑 Meja: ${order.tableNumber}\n`;
     }
@@ -350,6 +393,7 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
 
     // Detail Item
     items.forEach((item) => {
+      // Format: 2x Nasi Goreng (Rp 30.000)
       text += `${item.quantity}x ${item.name}\n`;
       text += `   @ ${formatRupiah(item.price)} = ${formatRupiah(
         item.price * item.quantity
@@ -359,14 +403,32 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     // Footer & Total
     text += `--------------------------------\n`;
     text += `*TOTAL: ${formatRupiah(order.totalAmount)}*\n`;
-    // 🔥 PERBAIKAN: Gunakan 'amountPaid' dan 'change' sesuai definisi tipe data kamu
-    if (order.paymentMethod === 'cash') {
-      text += `💵 Tunai: ${formatRupiah(order.amountPaid)}\n`;
-      text += `🔄 Kembali: ${formatRupiah(order.change)}\n`;
+
+    // 🔥 LOGIKA PEMBAYARAN (SINKRON DENGAN STRUK FISIK)
+    if (order.paymentMethod === 'split' && payments && payments.length > 0) {
+      text += `💳 Metode: SPLIT PAYMENT\n`;
+      text += `Rincian:\n`;
+      payments.forEach((p) => {
+        text += `   - ${p.method.toUpperCase()}: ${formatRupiah(p.amount)}\n`;
+      });
+    } else if (order.paymentMethod === 'cash') {
+      text += `💳 Metode: CASH\n`;
+      // Pastikan field ini ada di object order kamu (amountPaid/cashAmount)
+      text += `💵 Tunai: ${formatRupiah(
+        successData.cashReceived || order.amountPaid || 0
+      )}\n`;
+      // Tampilkan kembalian jika ada
+      const kembalian = successData.change || order.change || 0;
+      if (kembalian > 0) {
+        text += `🔄 Kembali: ${formatRupiah(kembalian)}\n`;
+      }
+    } else {
+      // Untuk QRIS / Transfer
+      text += `💳 Metode: ${
+        order.paymentMethod ? order.paymentMethod.toUpperCase() : '-'
+      }\n`;
     }
-    text += `💳 Metode: ${
-      order.paymentMethod ? order.paymentMethod.toUpperCase() : '-'
-    }\n`;
+
     text += `--------------------------------\n`;
     text += `Terima kasih telah berbelanja! 🙏\n`;
     text += `_Simpan struk ini sebagai bukti pembayaran yang sah._`;
@@ -375,25 +437,24 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     const encodedText = encodeURIComponent(text);
     let waUrl = '';
 
-    // Gunakan nomor HP dari ORDER yang tersimpan
-    const phoneTarget = order.customerPhone || customerForm.customerPhone; // Fallback ke form jika di order null
+    // Prioritas nomor HP:
+    // 1. Dari data Order (jika tersimpan di DB)
+    // 2. Dari Form input saat ini (fallback)
+    const phoneTarget = order.customerPhone || customerForm.customerPhone;
 
     if (phoneTarget) {
       // Format 08xx -> 628xx
-      let p = phoneTarget.replace(/\D/g, '');
-      if (p.startsWith('0')) p = '62' + p.substring(1);
+      let p = phoneTarget.replace(/\D/g, ''); // Hapus karakter non-angka
+      if (p.startsWith('0')) {
+        p = '62' + p.substring(1);
+      }
+
       waUrl = `https://wa.me/${p}?text=${encodedText}`;
     } else {
-      // Jika tidak ada nomor, buka WA picker
+      // Jika tidak ada nomor, buka WA picker (pilih kontak manual)
       waUrl = `https://wa.me/?text=${encodedText}`;
-      toast.info(
-        'Nomor HP tidak ditemukan di data order, silakan pilih kontak manual.'
-      );
+      toast.info('Membuka WhatsApp. Silakan pilih kontak tujuan.');
     }
-
-    // ❌ BAGIAN INI DIHAPUS SAJA
-    // Karena order sudah sukses, tidak perlu validasi meja/uang lagi.
-    // Validasi seharusnya dilakukan SEBELUM tombol "Bayar" ditekan, bukan saat kirim struk.
 
     window.open(waUrl, '_blank');
   };
@@ -737,73 +798,197 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                 }
               />
             </div>
-
-            {/* --- UPDATE: PAYMENT METHOD SELECTOR (TYPE SAFE) --- */}
-            <div className="grid grid-cols-3 gap-2 mt-2">
-              {[
-                { id: 'cash', label: 'Cash', icon: Banknote },
-                { id: 'debit', label: 'Debit', icon: CreditCard },
-                { id: 'qris', label: 'QRIS', icon: CheckCircle2 }, // Ganti icon sesuai selera
-              ].map((method) => (
-                <div
-                  key={method.id}
-                  onClick={() =>
-                    setCustomerForm((p) => ({
-                      ...p,
-                      paymentMethod: method.id as 'cash' | 'debit' | 'qris',
-                    }))
-                  }
-                  className={cn(
-                    'flex flex-col items-center justify-center p-2 rounded-lg border cursor-pointer transition-all',
-                    customerForm.paymentMethod === method.id
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border hover:bg-muted'
-                  )}
-                >
-                  <method.icon size={16} className="mb-1" />
-                  <span className="text-[10px] font-bold uppercase">
-                    {method.label}
-                  </span>
-                </div>
-              ))}
+          </div>
+          {/* --- UPDATE: PAYMENT METHOD SELECTOR (DENGAN SPLIT BILL) --- */}
+          <div className="grid grid-cols-4 gap-2 mt-2">
+            {' '}
+            {/* 👈 Ubah jadi 4 kolom */}
+            {[
+              { id: 'cash', label: 'Cash', icon: Banknote },
+              { id: 'debit', label: 'Debit', icon: CreditCard },
+              { id: 'qris', label: 'QRIS', icon: CheckCircle2 },
+            ].map((method) => (
+              <div
+                key={method.id}
+                onClick={() => {
+                  // 1. Matikan mode split jika user pilih metode biasa
+                  setIsSplitMode(false);
+                  // 2. Set metode pembayaran
+                  setCustomerForm((p) => ({
+                    ...p,
+                    paymentMethod: method.id as 'cash' | 'debit' | 'qris',
+                  }));
+                }}
+                className={cn(
+                  'flex flex-col items-center justify-center p-2 rounded-lg border cursor-pointer transition-all',
+                  // Cek: Jika TIDAK split mode DAN method cocok, highlight
+                  !isSplitMode && customerForm.paymentMethod === method.id
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border hover:bg-muted'
+                )}
+              >
+                <method.icon size={16} className="mb-1" />
+                <span className="text-[10px] font-bold uppercase">
+                  {method.label}
+                </span>
+              </div>
+            ))}
+            {/* 👇 TOMBOL KHUSUS SPLIT BILL 👇 */}
+            <div
+              onClick={() => {
+                setIsSplitMode(true);
+                // Inisialisasi pembayaran pertama dengan total tagihan
+                if (splitPayments.length === 0) {
+                  setSplitPayments([
+                    { method: 'cash', amount: subtotal, referenceId: '' },
+                  ]);
+                }
+              }}
+              className={cn(
+                'flex flex-col items-center justify-center p-2 rounded-lg border cursor-pointer transition-all',
+                // Highlight jika Mode Split AKTIF
+                isSplitMode
+                  ? 'border-lime-500 bg-lime-500/10 text-lime-500' // Warna beda biar mencolok
+                  : 'border-border hover:bg-muted'
+              )}
+            >
+              {/* Icon Split (Bisa pakai icon apa saja, misal Percent atau Divide) */}
+              <div className="mb-1 font-bold text-lg">½</div>
+              <span className="text-[10px] font-bold uppercase">Split</span>
             </div>
           </div>
 
-          {/* ... Pilihan Payment Method (Cash/Debit/QRIS) di atas ... */}
-
-          {/* 🔥 LOGIC INPUT UANG (Hanya muncul jika CASH) */}
-          {customerForm.paymentMethod === 'cash' && (
-            <div className="mt-4 p-3 bg-muted/50 rounded-xl border border-dashed border-border animate-in fade-in zoom-in-95 duration-200">
-              <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">
-                Uang Diterima (Cash)
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-muted-foreground">
-                  Rp
+          {/* 🔥 LOGIC TAMPILAN INPUT (SPLIT vs SINGLE) */}
+          {isSplitMode ? (
+            // === TAMPILAN MODE SPLIT BILL ===
+            <div className="mt-4 p-3 bg-zinc-900/50 rounded-xl border border-zinc-800 space-y-3 animate-in fade-in slide-in-from-top-2">
+              <div className="flex justify-between items-center text-xs text-muted-foreground border-b border-white/10 pb-2">
+                <span>Rincian Pembayaran</span>
+                <span>
+                  Sisa:{' '}
+                  <span
+                    className={
+                      remainingSplit > 0
+                        ? 'text-red-500 font-bold'
+                        : 'text-green-500 font-bold'
+                    }
+                  >
+                    {formatRupiah(remainingSplit)}
+                  </span>
                 </span>
-                <Input
-                  type="number" // Gunakan number agar keyboard HP angka muncul
-                  placeholder="0"
-                  className="pl-9 text-lg font-bold h-11 bg-background"
-                  value={cashGiven || ''} // Handle 0 supaya placeholder muncul
-                  onChange={(e) => setCashGiven(Number(e.target.value))}
-                  autoFocus // Supaya kasir langsung bisa ketik
-                />
               </div>
 
-              {/* Display Kembalian Real-time */}
-              <div className="flex justify-between items-center mt-3 pt-3 border-t border-border/50">
-                <span className="text-sm font-medium">Kembalian:</span>
-                <span
-                  className={cn(
-                    'text-xl font-bold',
-                    change < 0 ? 'text-destructive' : 'text-green-600'
-                  )}
+              {/* List Pembayaran Split */}
+              {splitPayments.map((payment, idx) => (
+                <div key={idx} className="flex gap-2 items-center">
+                  {/* Select Metode */}
+                  <select
+                    value={payment.method}
+                    onChange={(e) => {
+                      const newSplits = [...splitPayments];
+                      newSplits[idx].method = e.target.value as
+                        | 'cash'
+                        | 'debit'
+                        | 'qris';
+                      setSplitPayments(newSplits);
+                    }}
+                    className="h-9 bg-background text-xs rounded border border-input px-2 w-[80px]"
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="debit">Debit</option>
+                    <option value="qris">QRIS</option>
+                  </select>
+
+                  {/* Input Nominal */}
+                  <div className="relative flex-1">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
+                      Rp
+                    </span>
+                    <Input
+                      type="number"
+                      value={payment.amount || ''}
+                      onChange={(e) => {
+                        const newSplits = [...splitPayments];
+                        newSplits[idx].amount = Number(e.target.value);
+                        setSplitPayments(newSplits);
+                      }}
+                      className="h-9 pl-6 text-xs"
+                    />
+                  </div>
+
+                  {/* Tombol Hapus */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                    onClick={() => {
+                      const newSplits = splitPayments.filter(
+                        (_, i) => i !== idx
+                      );
+                      setSplitPayments(newSplits);
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
+              ))}
+
+              {/* Tombol Tambah Pembayaran */}
+              {remainingSplit > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setSplitPayments([
+                      ...splitPayments,
+                      {
+                        method: 'cash',
+                        amount: remainingSplit,
+                        referenceId: '',
+                      },
+                    ])
+                  }
+                  className="w-full border-dashed border-primary/50 text-primary hover:bg-primary/10 h-8 text-xs"
                 >
-                  {formatRupiah(change)}
-                </span>
-              </div>
+                  <Plus size={12} className="mr-1" /> Tambah Pembayaran
+                </Button>
+              )}
             </div>
+          ) : (
+            // === TAMPILAN MODE BIASA (CASH ONLY INPUT) ===
+            customerForm.paymentMethod === 'cash' && (
+              <div className="mt-4 p-3 bg-muted/50 rounded-xl border border-dashed border-border animate-in fade-in zoom-in-95 duration-200">
+                <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">
+                  Uang Diterima (Cash)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-muted-foreground">
+                    Rp
+                  </span>
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    className="pl-9 text-lg font-bold h-11 bg-background"
+                    value={cashGiven || ''}
+                    onChange={(e) => setCashGiven(Number(e.target.value))}
+                    autoFocus
+                  />
+                </div>
+
+                {/* Display Kembalian Real-time */}
+                <div className="flex justify-between items-center mt-3 pt-3 border-t border-border/50">
+                  <span className="text-sm font-medium">Kembalian:</span>
+                  <span
+                    className={cn(
+                      'text-xl font-bold',
+                      change < 0 ? 'text-destructive' : 'text-green-600'
+                    )}
+                  >
+                    {formatRupiah(change)}
+                  </span>
+                </div>
+              </div>
+            )
           )}
 
           {/* ... DialogFooter di bawah ... */}
@@ -893,9 +1078,8 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
             date={successData.order.createdAt || new Date()}
             storeName="NexLanding POS"
             storeAddress="Cabang Utama - Bekasi"
-            cashierName="Kasir" // Bisa ambil dari session jika ada
+            cashierName="Kasir"
             customerName={successData.order.customerName || 'Guest'}
-            // Mapping item dari successData (copy dari cart tadi)
             items={successData.items.map((item) => ({
               id: item.id,
               name: item.name,
@@ -904,9 +1088,11 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
             }))}
             totalAmount={successData.order.totalAmount}
             paymentMethod={successData.order.paymentMethod}
-            // Kirim data uang tunai jika metode bayar Cash
             cashAmount={successData.cashReceived}
             changeAmount={successData.change}
+            // 🔥 PERBAIKAN DISINI:
+            // Jangan kirim array kosong [], tapi kirim data dari state
+            payments={successData.payments || []}
           />
         )}
       </div>
