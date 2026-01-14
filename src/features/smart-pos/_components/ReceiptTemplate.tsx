@@ -98,28 +98,23 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
         </div>
 
         {/* 🔥 CEK APAKAH SPLIT PAYMENT ATAU BUKAN */}
-        {paymentMethod === 'split' && payments && payments.length > 0 ? (
-          // JIKA SPLIT, TAMPILKAN LIST PEMBAYARAN
-          <div className="mt-1 flex flex-col gap-1">
-            <div className="text-[10px] font-bold italic mb-1">
-              Rincian Split:
-            </div>
-            {payments.map((pay, idx) => (
-              <div key={idx} className="flex justify-between text-[11px]">
-                <span className="uppercase pl-2">- {pay.method}</span>
-                <span>{formatRupiah(pay.amount)}</span>
+        {/* 🔥 LOGIC TAMPILAN PEMBAYARAN */}
+        {paymentMethod === 'split' && payments.length > 0 ? (
+          // JIKA SPLIT: Tampilkan Loop
+          <div className="mt-1 flex flex-col gap-1 border-t border-dashed border-gray-400 pt-1">
+            <span className="italic text-[10px]">Split Payment:</span>
+            {payments.map((p, i) => (
+              <div key={i} className="flex justify-between text-[11px]">
+                <span className="uppercase">- {p.method}</span>
+                <span>{formatRupiah(p.amount)}</span>
               </div>
             ))}
           </div>
         ) : (
-          // JIKA BUKAN SPLIT (SINGLE PAYMENT)
+          // JIKA SINGLE: Tampilkan Biasa
           <div className="flex justify-between mt-1">
             <span className="uppercase">{paymentMethod}</span>
-            <span>
-              {cashAmount
-                ? formatRupiah(cashAmount)
-                : formatRupiah(totalAmount)}
-            </span>
+            <span>{formatRupiah(cashAmount || totalAmount)}</span>
           </div>
         )}
 

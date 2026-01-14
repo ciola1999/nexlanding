@@ -119,6 +119,20 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     payments?: { method: string; amount: number }[];
   } | null>(null);
 
+  // --- STATE FORM DEBIT (Tambahkan ini di bawah state lainnya) ---
+  const [debitForm, setDebitForm] = React.useState({
+    bankName: '',
+    lastFourDigits: '',
+    approvalCode: '',
+  });
+
+  // Reset form saat dialog checkout ditutup
+  useEffect(() => {
+    if (!isCheckoutOpen) {
+      setDebitForm({ bankName: '', lastFourDigits: '', approvalCode: '' });
+    }
+  }, [isCheckoutOpen]);
+
   // --- INIT & LOCAL STORAGE ---
   useEffect(() => {
     const savedCart = localStorage.getItem('nexpos-cart');
@@ -312,11 +326,30 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
       const amount =
         customerForm.paymentMethod === 'cash' ? cashGiven : subtotal;
 
+      // 🔥 TAMBAHAN BARU: Validasi Debit & Buat Reference ID
+      let refId = '';
+      if (customerForm.paymentMethod === 'debit') {
+        if (
+          !debitForm.bankName ||
+          debitForm.lastFourDigits.length < 4 ||
+          !debitForm.approvalCode
+        ) {
+          toast.error(
+            'Mohon lengkapi data kartu debit (Bank, 4 Digit, Approval)'
+          );
+          return;
+        }
+        // Gabungkan data jadi string
+        refId = `${debitForm.bankName.toUpperCase()}|${
+          debitForm.lastFourDigits
+        }|APPR:${debitForm.approvalCode.toUpperCase()}`;
+      }
+
       finalPayments = [
         {
           method: customerForm.paymentMethod,
           amount: amount,
-          referenceId: '',
+          referenceId: refId,
         },
       ];
     }
@@ -989,6 +1022,66 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                 </div>
               </div>
             )
+          )}
+          {customerForm.paymentMethod === 'debit' && (
+            <div className="mt-4 p-4 bg-indigo-950/10 rounded-xl border border-indigo-500/30 space-y-3 animate-in fade-in zoom-in-95">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-muted-foreground">
+                    Bank
+                  </label>
+                  <Input
+                    placeholder="BCA"
+                    className="h-9 text-xs"
+                    value={debitForm.bankName}
+                    onChange={(e) =>
+                      setDebitForm((p) => ({ ...p, bankName: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-muted-foreground">
+                    4 Digit Akhir
+                  </label>
+                  <Input
+                    placeholder="8821"
+                    maxLength={4}
+                    className="h-9 text-xs font-mono"
+                    value={debitForm.lastFourDigits}
+                    onChange={(e) =>
+                      setDebitForm((p) => ({
+                        ...p,
+                        lastFourDigits: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground">
+                  Approval Code (EDC)
+                </label>
+                <Input
+                  placeholder="XX123456"
+                  className="h-9 text-xs tracking-widest uppercase"
+                  value={debitForm.approvalCode}
+                  onChange={(e) =>
+                    setDebitForm((p) => ({
+                      ...p,
+                      approvalCode: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+          )}
+          {/* UI QRIS (Opsional) */}
+          {customerForm.paymentMethod === 'qris' && (
+            <div className="mt-4 p-4 flex flex-col items-center justify-center border-2 border-dashed rounded-xl bg-muted/20">
+              <p className="text-xs text-muted-foreground">
+                Scan QRIS di Customer Display
+              </p>
+            </div>
           )}
 
           {/* ... DialogFooter di bawah ... */}
