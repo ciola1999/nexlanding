@@ -579,7 +579,7 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
   return (
     <div
       ref={containerRef}
-      className="flex flex-col h-[100dvh] bg-background text-foreground overflow-hidden overflow-x-hidden relative"
+      className="flex flex-col h-dvh bg-background text-foreground overflow-hidden overflow-x-hidden relative"
     >
       {/* HEADER */}
       <header className="px-3 py-2 lg:px-4 lg:py-3 border-b border-border flex items-center gap-3 shrink-0 bg-background/50 backdrop-blur-sm z-20">
@@ -628,7 +628,7 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                       'opacity-50 grayscale cursor-not-allowed'
                   )}
                 >
-                  <div className="aspect-[4/3] relative bg-muted w-full">
+                  <div className="aspect-4/3 relative bg-muted w-full">
                     {product.imageUrl ? (
                       <Image
                         src={product.imageUrl}
@@ -666,7 +666,7 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
                       </span>
                       {product.stock > 0 && (
                         <div className="h-5 w-5 lg:h-6 lg:w-6 rounded-full bg-muted flex items-center justify-center group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                          <Plus size={12} className="lg:w-[14px] lg:h-[14px]" />
+                          <Plus size={12} className="lg:w-3.5 lg:h-3.5" />
                         </div>
                       )}
                     </div>

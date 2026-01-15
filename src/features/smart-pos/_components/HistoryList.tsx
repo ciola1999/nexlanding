@@ -1,3 +1,5 @@
+// E:\Belajar Javascript\.vscode\Project-Freelance\nexlanding\frontend\src\features\smart-pos\_components\HistoryList.tsx
+
 'use client';
 
 import { useRef, useState } from 'react';
@@ -34,9 +36,9 @@ type HistoryItem = {
   createdAt: Date | string | null;
 
   // 🔥 TAMBAHKAN ARRAY PAYMENTS DISINI
-  payments: {
+  payments?: {
     id: number;
-    paymentMethod: 'cash' | 'debit' | 'qris' | 'split' | string; // Tambah 'split'
+    paymentMethod: 'cash' | 'debit' | 'qris' | 'split' | string;
     amount: number;
   }[];
 

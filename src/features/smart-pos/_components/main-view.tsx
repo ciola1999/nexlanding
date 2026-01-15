@@ -1,3 +1,5 @@
+// :\Belajar Javascript\.vscode\Project-Freelance\nexlanding\frontend\src\features\smart-pos\_components\main-view.tsx
+
 'use client';
 
 import { useRef } from 'react';
@@ -17,7 +19,8 @@ import { useGSAP } from '@gsap/react';
 import StatusBadge from './status-badge';
 import POSInterface from './pos-interface';
 import InventoryDashboard from './InventoryDashboard';
-import DashboardAnalytics from './DashboardAnalytics';
+import DashboardView from './DashboardView';
+import { DashboardData } from '../services/dashboard.service';
 import HistoryList from './HistoryList';
 import LogoutButton from '@/features/smart-pos/_components/logout-button';
 
@@ -48,12 +51,14 @@ interface NavButtonProps {
 interface SmartPosMainViewProps {
   products: Product[];
   currentView: string | undefined;
+  dashboardData: DashboardData;
   transactionHistory: HistoryRecord[];
 }
 
 export default function SmartPosMainView({
   products,
   currentView,
+  dashboardData,
   transactionHistory = [],
 }: SmartPosMainViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -100,7 +105,7 @@ export default function SmartPosMainView({
   const renderContent = () => {
     switch (view) {
       case 'dashboard':
-        return <DashboardAnalytics />;
+        return <DashboardView data={dashboardData} />;
       case 'inventory':
         return (
           <InventoryDashboard

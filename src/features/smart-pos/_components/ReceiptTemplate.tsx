@@ -36,7 +36,7 @@ export const ReceiptTemplate: React.FC<ReceiptProps> = ({
   paymentMethod,
   cashAmount,
   changeAmount,
-  payments, // 🔥 1. JANGAN LUPA AMBIL PROPS INI
+  payments = [], // 🔥 1. JANGAN LUPA AMBIL PROPS INI
 }) => {
   return (
     // 🔥 2. KURANGI PADDING BAWAH AGAR TIDAK TEMBUS 2 HALAMAN

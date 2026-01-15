@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation';
 import { getProducts } from '@/features/smart-pos/_actions/products'; // Pastikan action ini sudah di-update support sorting
 import { getTransactionHistory } from '@/features/smart-pos/_actions/get-history';
 import { getSession } from '@/lib/auth';
+import { getDashboardData } from '@/features/smart-pos/services/dashboard.service'; // 👈 IMPORT SERVICE KITA
 
 import SmartPosMainView from '@/features/smart-pos/_components/main-view';
 import SmartPosSkeleton from '@/features/smart-pos/_components/Skeleton';
@@ -37,16 +38,19 @@ async function PosDataLoader({
   const [productsResult, historyResult] = await Promise.all([
     getProducts(sort, order),
     getTransactionHistory(),
+    getDashboardData(), // 👈 AMBIL DATA DASHBOARD DI SINI
   ]);
 
   const products = productsResult.success ? productsResult.data : [];
   const history = historyResult.success ? historyResult.data : [];
+  const dashboardData = await getDashboardData(); // DIBUAT DULU
 
   return (
     <SmartPosMainView
       products={products}
-      currentView={currentView}
       transactionHistory={history}
+      dashboardData={dashboardData} // 👈 LEMPAR KE BAWAH
+      currentView={currentView}
     />
   );
 }
