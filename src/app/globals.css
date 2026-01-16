@@ -158,29 +158,27 @@
   background-color: rgba(255, 255, 255, 0.3);
 }
 
+/* globals.css */
+
+/* ... CSS aplikasi lainnya ... */
+
 @media print {
-  /* 1. Atur Kertas & Hapus Header/Footer Browser */
+  /* 1. Hapus Header/Footer bawaan Browser (Tanggal, URL, Page Number) */
   @page {
-    margin: 0mm;
+    margin: 0mm; /* Seringkali 0mm atau 5mm, sesuaikan dengan printer */
     size: auto;
   }
 
-  /* 2. Reset Body supaya Putih & Hitam (Penting buat Dark Mode) */
+  /* 2. Pastikan Background & Warna tercetak akurat */
   body {
-    background-color: white !important;
-    color: black !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
-  /* 3. Reset Margin HTML */
-  html,
-  body {
-    margin: 0 !important;
-    padding: 0 !important;
-    height: 100%;
-    width: 100%;
+  /* 3. (Opsional) Reset font agar tajam di kertas struk */
+  /* React-to-print akan meng-copy style ini ke dalam iframe print */
+  * {
+    box-sizing: border-box;
+    text-rendering: optimizeLegibility;
   }
-
-  /* HAPUS SEMUA BAGIAN LAIN (Poin 4 & 5 TADI DIBUANG) */
 }

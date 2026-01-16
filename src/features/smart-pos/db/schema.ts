@@ -1,3 +1,5 @@
+// E:\Belajar Javascript\.vscode\Project-Freelance\nexlanding\frontend\src\features\smart-pos\db\schema.ts
+
 import {
   pgTable,
   serial,

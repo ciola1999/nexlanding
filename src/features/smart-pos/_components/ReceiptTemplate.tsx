@@ -1,3 +1,5 @@
+// E:\Belajar Javascript\.vscode\Project-Freelance\nexlanding\frontend\src\features\smart-pos\_components\ReceiptTemplate.tsx
+
 import * as React from 'react';
 import { formatRupiah } from '@/lib/utils';
 
