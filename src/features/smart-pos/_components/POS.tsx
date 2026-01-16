@@ -25,7 +25,6 @@ import {
   CreditCard,
   Printer,
   MessageCircle,
-  Utensils,
 } from 'lucide-react';
 
 // --- COMPONENTS & UTILS ---
@@ -124,9 +123,7 @@ export default function POSInterface({
     payments?: PaymentItem[];
   } | null>(null);
 
-  // --- CALCULATIONS (TOP LEVEL - JANGAN DI DALAM FUNGSI LAIN) ---
-
-  // 1. Hitung Rate Pajak
+  // --- CALCULATIONS (Memoized for Performance) ---
   const taxRate = useMemo(
     () => (taxesData.length > 0 ? parseFloat(taxesData[0].rate) : 0),
     [taxesData]
@@ -136,25 +133,22 @@ export default function POSInterface({
     [taxesData]
   );
 
-  // 2. Hitung Total & Subtotal (Gunakan Math.round di sini)
   const { subtotal, taxAmount, finalTotal } = useMemo(() => {
     const sub = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
-    const tax = Math.round((sub * taxRate) / 100); // Presisi: Bulatkan pajak
+    const tax = Math.round((sub * taxRate) / 100); // Rounding untuk menghindari desimal aneh
     return {
       subtotal: sub,
       taxAmount: tax,
-      finalTotal: sub + tax, // Integer + Integer = Aman
+      finalTotal: sub + tax,
     };
   }, [cart, taxRate]);
 
-  // 3. Hitung Split Bill
+  // Split Bill Calculations
   const totalPaidSplit = useMemo(
     () => splitPayments.reduce((sum, p) => sum + (p.amount || 0), 0),
     [splitPayments]
   );
-
-  // Pastikan remaining tidak minus (Math.max)
-  const remainingSplit = Math.max(0, finalTotal - totalPaidSplit);
+  const remainingSplit = Math.max(0, finalTotal - totalPaidSplit); // Prevent negative display
 
   // --- INIT & LOCAL STORAGE SAFEGUARD (FIXED) ---
   useEffect(() => {
@@ -490,8 +484,6 @@ export default function POSInterface({
     </div>
   );
 
-  // --- RENDER HELPERS ---
-
   const renderCheckoutSummary = () => (
     <div className="space-y-4">
       <div className="space-y-1.5 pt-2 text-sm">
@@ -663,17 +655,11 @@ export default function POSInterface({
             </Badge>
           </div>
 
-          <div className="flex-1 overflow-hidden relative bg-card">
-            <ScrollArea className="h-full w-full">
-              <div className="p-4 pb-20">
-                {' '}
-                {/* Tambah padding bawah agar item terakhir tidak ketutup bayangan */}
-                {renderCartList()}
-              </div>
-            </ScrollArea>
-          </div>
+          <ScrollArea className="flex-1 p-4 bg-muted/5">
+            {renderCartList()}
+          </ScrollArea>
 
-          <div className="p-4 border-t border-border bg-muted/20 shrink-0 z-20 shadow-[0_-5px_15px_rgba(0,0,0,0.05)]">
+          <div className="p-5 border-t border-border/40 bg-card shadow-[0_-5px_20px_rgba(0,0,0,0.02)]">
             {renderCheckoutSummary()}
           </div>
         </div>
@@ -719,477 +705,439 @@ export default function POSInterface({
         </SheetContent>
       </Sheet>
 
-      {/* DIALOG CHECKOUT (RE-DESIGNED: 2 Columns & Responsive) */}
+      {/* 4. CHECKOUT DIALOG (MAIN FORM) */}
       <Dialog open={isCheckoutOpen} onOpenChange={setIsCheckoutOpen}>
-        <DialogContent className="max-w-[95vw] md:max-w-4xl h-[90vh] md:h-auto md:max-h-[90vh] p-0 bg-card border-border overflow-hidden flex flex-col md:flex-row gap-0">
-          {/* KOLOM KIRI: DETAIL ITEM (Hanya muncul di Desktop / Tablet) */}
-          <div className="hidden md:flex w-[40%] flex-col bg-muted/30 border-r border-border h-full">
-            <div className="p-4 border-b border-border bg-muted/50">
-              <h3 className="font-bold flex items-center gap-2 text-sm">
-                <ShoppingCart className="h-4 w-4" /> Rincian Pesanan
-              </h3>
-            </div>
+        <DialogContent className="max-w-4xl p-0 gap-0 overflow-hidden bg-card border-none shadow-2xl">
+          <div className="grid grid-cols-1 md:grid-cols-12 h-full md:h-[650px]">
+            {/* Left: Summary (Hidden on mobile, or collapsible) */}
+            <div className="md:col-span-4 bg-muted/20 border-r border-border/40 p-6 flex flex-col h-full">
+              <DialogHeader>
+                <DialogTitle>Detail Pembayaran</DialogTitle>
+                <DialogDescription>
+                  Periksa kembali pesanan sebelum memproses.
+                </DialogDescription>
+              </DialogHeader>
 
-            <ScrollArea className="flex-1 p-4">
-              <div className="space-y-3">
+              <div className="mt-6 flex-1 overflow-y-auto pr-2 custom-scrollbar">
                 {cart.map((item) => (
                   <div
                     key={item.id}
-                    className="flex flex-col gap-1 border-b border-dashed border-border pb-2 last:border-0"
+                    className="flex justify-between py-2 border-b border-border/30 last:border-0 text-sm"
                   >
-                    <div className="flex justify-between items-start gap-2 text-sm">
-                      <span className="font-medium line-clamp-2 leading-snug">
-                        {item.quantity}x {item.name}
-                      </span>
-                      <span className="font-mono font-bold shrink-0">
-                        {formatRupiah(item.price * item.quantity)}
-                      </span>
-                    </div>
-                    {item.quantity > 1 && (
-                      <span className="text-[10px] text-muted-foreground ml-4">
-                        (@ {formatRupiah(item.price)})
-                      </span>
-                    )}
+                    <span className="text-muted-foreground">
+                      {item.quantity}x {item.name}
+                    </span>
+                    <span className="font-mono font-medium">
+                      {formatRupiah(item.price * item.quantity)}
+                    </span>
                   </div>
                 ))}
               </div>
-            </ScrollArea>
 
-            <div className="p-4 border-t border-border bg-background/50 space-y-1">
-              <div className="flex justify-between text-sm text-muted-foreground">
-                <span>Subtotal</span>
-                <span>{formatRupiah(subtotal)}</span>
-              </div>
-              <div className="flex justify-between text-sm text-muted-foreground">
-                <span>Pajak ({taxRate}%)</span>
-                <span>{formatRupiah(taxAmount)}</span>
-              </div>
-              <div className="h-px bg-border my-2" />
-              <div className="flex justify-between font-bold text-base">
-                <span>Total Tagihan</span>
-                <span className="text-primary">{formatRupiah(finalTotal)}</span>
+              <div className="mt-auto pt-6 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Subtotal</span>
+                  <span>{formatRupiah(subtotal)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Pajak</span>
+                  <span>{formatRupiah(taxAmount)}</span>
+                </div>
+                <div className="flex justify-between text-xl font-bold bg-primary/10 p-3 rounded-lg text-primary mt-2">
+                  <span>Total</span>
+                  <span>{formatRupiah(finalTotal)}</span>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* KOLOM KANAN: FORM PEMBAYARAN */}
-          <div className="flex-1 flex flex-col h-[80vh] md:h-[600px] bg-card overflow-hidden">
-            <DialogHeader className="p-4 border-b border-border shrink-0">
-              <DialogTitle>Konfirmasi Pembayaran</DialogTitle>
-              <DialogDescription className="hidden md:block">
-                Lengkapi data pelanggan dan metode pembayaran.
-              </DialogDescription>
-              {/* Tampilkan Total di Header Mobile saja */}
-              <div className="md:hidden mt-2 p-2 bg-primary/10 rounded border border-primary/20 flex justify-between items-center font-bold">
-                <span className="text-sm">Total</span>
-                <span className="text-primary text-lg">
-                  {formatRupiah(finalTotal)}
-                </span>
-              </div>
-            </DialogHeader>
-
-            {/* AREA FORM (SCROLLABLE) */}
-            <div className="flex-1 overflow-hidden relative">
-              <ScrollArea className="h-full w-full">
-                <div className="p-4 grid gap-4">
-                  {/* Tipe Pesanan */}
+            {/* Right: Input Forms */}
+            <div className="md:col-span-8 p-6 flex flex-col h-full overflow-y-auto">
+              <div className="space-y-6">
+                {/* A. Customer Info */}
+                <section className="space-y-3">
+                  <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
+                    <User size={16} /> Informasi Pelanggan
+                  </h4>
                   <div className="grid grid-cols-2 gap-3">
-                    <div
-                      onClick={() =>
-                        setCustomerForm((p) => ({ ...p, orderType: 'dine_in' }))
-                      }
-                      className={cn(
-                        'border rounded-lg p-3 flex flex-col items-center cursor-pointer transition-all hover:bg-muted/50',
-                        customerForm.orderType === 'dine_in'
-                          ? 'border-primary bg-primary/5 text-primary ring-1 ring-primary'
-                          : 'border-border'
-                      )}
-                    >
-                      <Utensils className="mb-2 h-5 w-5" />
-                      <span className="font-bold text-xs uppercase">
-                        Makan di Tempat
-                      </span>
-                    </div>
-                    <div
-                      onClick={() =>
-                        setCustomerForm((p) => ({
-                          ...p,
-                          orderType: 'take_away',
-                        }))
-                      }
-                      className={cn(
-                        'border rounded-lg p-3 flex flex-col items-center cursor-pointer transition-all hover:bg-muted/50',
-                        customerForm.orderType === 'take_away'
-                          ? 'border-primary bg-primary/5 text-primary ring-1 ring-primary'
-                          : 'border-border'
-                      )}
-                    >
-                      <ShoppingBag className="mb-2 h-5 w-5" />
-                      <span className="font-bold text-xs uppercase">
-                        Bawa Pulang
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Form Inputs */}
-                  <div className="space-y-3">
-                    {customerForm.orderType === 'dine_in' && (
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Nomor Meja
-                        </label>
-                        <Input
-                          placeholder="Contoh: 12"
-                          value={customerForm.tableNumber}
-                          onChange={(e) =>
-                            setCustomerForm({
-                              ...customerForm,
-                              tableNumber: e.target.value,
-                            })
-                          }
-                        />
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Nama Pelanggan
-                        </label>
-                        <Input
-                          placeholder="Nama (Opsional)"
-                          value={customerForm.customerName}
-                          onChange={(e) =>
-                            setCustomerForm({
-                              ...customerForm,
-                              customerName: e.target.value,
-                            })
-                          }
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          WhatsApp (Opsional)
-                        </label>
-                        <Input
-                          placeholder="0812..."
-                          type="tel"
-                          value={customerForm.customerPhone}
-                          onChange={(e) =>
-                            setCustomerForm({
-                              ...customerForm,
-                              customerPhone: e.target.value,
-                            })
-                          }
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="h-px bg-border/50" />
-
-                  {/* Metode Pembayaran */}
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="text-sm font-bold">
-                        Metode Pembayaran
+                    <div className="col-span-1">
+                      <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                        Tipe Pesanan
                       </label>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-muted-foreground uppercase font-bold">
-                          Split Bill?
-                        </span>
-                        <div
-                          className={cn(
-                            'w-8 h-4 rounded-full relative cursor-pointer transition-colors',
-                            isSplitMode ? 'bg-primary' : 'bg-muted'
-                          )}
-                          onClick={() => {
-                            setIsSplitMode(!isSplitMode);
-                            if (!isSplitMode && splitPayments.length === 0) {
-                              setSplitPayments([
-                                {
-                                  method: 'cash',
-                                  amount: subtotal,
-                                  referenceId: '',
-                                },
-                              ]);
+                      <div className="flex bg-muted p-1 rounded-lg">
+                        {(['dine_in', 'take_away'] as const).map((type) => (
+                          <button
+                            key={type}
+                            // FIX: Casting ke tipe spesifik, bukan any
+                            onClick={() =>
+                              setCustomerForm((prev) => ({
+                                ...prev,
+                                orderType: type,
+                              }))
                             }
-                          }}
-                        >
-                          <div
                             className={cn(
-                              'absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all shadow-sm',
-                              isSplitMode ? 'left-4.5' : 'left-0.5'
+                              'flex-1 py-1.5 text-xs font-semibold rounded-md transition-all',
+                              customerForm.orderType === type
+                                ? 'bg-background shadow text-primary'
+                                : 'text-muted-foreground hover:text-foreground'
                             )}
-                          />
-                        </div>
+                          >
+                            {type === 'dine_in'
+                              ? 'Makan di Tempat'
+                              : 'Bawa Pulang'}
+                          </button>
+                        ))}
                       </div>
                     </div>
+                    <div className="col-span-1">
+                      <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                        No. Meja
+                      </label>
+                      <Input
+                        placeholder="Contoh: 12"
+                        value={customerForm.tableNumber}
+                        onChange={(e) =>
+                          setCustomerForm((prev) => ({
+                            ...prev,
+                            tableNumber: e.target.value,
+                          }))
+                        }
+                        disabled={customerForm.orderType === 'take_away'}
+                        className="h-9"
+                      />
+                    </div>
+                    <div className="col-span-1">
+                      <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                        Nama Pelanggan
+                      </label>
+                      <Input
+                        placeholder="Nama (Opsional)"
+                        value={customerForm.customerName}
+                        onChange={(e) =>
+                          setCustomerForm((prev) => ({
+                            ...prev,
+                            customerName: e.target.value,
+                          }))
+                        }
+                        className="h-9"
+                      />
+                    </div>
+                    <div className="col-span-1">
+                      <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                        WhatsApp (Opsional)
+                      </label>
+                      <Input
+                        placeholder="0812..."
+                        value={customerForm.customerPhone}
+                        onChange={(e) =>
+                          setCustomerForm((prev) => ({
+                            ...prev,
+                            customerPhone: e.target.value,
+                          }))
+                        }
+                        className="h-9"
+                      />
+                    </div>
+                  </div>
+                </section>
 
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { id: 'cash', label: 'Tunai', icon: Banknote },
-                        { id: 'qris', label: 'QRIS', icon: CheckCircle2 },
-                        {
-                          id: 'debit',
-                          label: 'Debit/Kredit',
-                          icon: CreditCard,
-                        },
-                      ].map((method) => (
+                <div className="h-px bg-border/50" />
+
+                {/* B. Payment Method */}
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
+                      <CreditCard size={16} /> Metode Pembayaran
+                    </h4>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs text-muted-foreground">
+                        Split Bill?
+                      </span>
+                      <button
+                        onClick={() => setIsSplitMode(!isSplitMode)}
+                        className={cn(
+                          'w-10 h-5 rounded-full relative transition-colors',
+                          isSplitMode ? 'bg-primary' : 'bg-muted'
+                        )}
+                      >
                         <div
-                          key={method.id}
-                          onClick={() => {
-                            // FIX: Casting ke tipe spesifik dari Interface, bukan any
-                            if (!isSplitMode)
-                              setCustomerForm((p) => ({
-                                ...p,
-                                paymentMethod:
-                                  method.id as CustomerFormState['paymentMethod'],
-                              }));
-                          }}
                           className={cn(
-                            'flex flex-col items-center justify-center p-3 rounded-lg border cursor-pointer transition-all',
-                            !isSplitMode &&
-                              customerForm.paymentMethod === method.id
-                              ? 'border-primary bg-primary/10 text-primary ring-1 ring-primary'
-                              : 'border-border hover:bg-muted',
-                            isSplitMode && 'opacity-50 cursor-not-allowed'
+                            'absolute top-1 left-1 bg-white w-3 h-3 rounded-full transition-transform',
+                            isSplitMode && 'translate-x-5'
                           )}
-                        >
-                          <method.icon size={18} className="mb-1" />
-                          <span className="text-[10px] font-bold">
-                            {method.label}
-                          </span>
-                        </div>
-                      ))}
+                        />
+                      </button>
                     </div>
                   </div>
 
-                  {/* LOGIC INPUT UANG / SPLIT (Sama seperti sebelumnya, tapi layout dirapikan) */}
-                  {isSplitMode ? (
-                    <div className="p-3 bg-muted/30 rounded-lg border border-dashed space-y-3">
-                      {/* ... (Kode Split Bill Sama, singkatnya render list) ... */}
-                      <div className="flex justify-between text-xs font-bold mb-2">
-                        <span>Rincian Split</span>
-                        <span
-                          className={
-                            remainingSplit > 0
-                              ? 'text-destructive'
-                              : 'text-green-600'
-                          }
-                        >
-                          Sisa: {formatRupiah(remainingSplit)}
-                        </span>
-                      </div>
-                      {splitPayments.map((payment, idx) => (
-                        <div key={idx} className="flex gap-2 items-center">
-                          <select
-                            value={payment.method}
-                            onChange={(e) => {
-                              const newSplits = [...splitPayments];
-                              // FIX: Casting ke tipe PaymentItem['method']
-                              newSplits[idx].method = e.target
-                                .value as PaymentItem['method'];
-                              setSplitPayments(newSplits);
-                            }}
-                            className="h-9 bg-background text-xs rounded border px-1 w-20"
-                          >
-                            <option value="cash">Tunai</option>
-                            <option value="debit">Debit</option>
-                            <option value="qris">QRIS</option>
-                          </select>
-                          <Input
-                            type="number"
-                            value={payment.amount || ''}
-                            onChange={(e) => {
-                              const newSplits = [...splitPayments];
-                              newSplits[idx].amount = Number(e.target.value);
-                              setSplitPayments(newSplits);
-                            }}
-                            className="h-9 flex-1 text-xs"
-                            placeholder="Jumlah"
-                          />
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-8 w-8 text-destructive"
+                  {/* Payment Tabs */}
+                  {!isSplitMode ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-3 gap-2">
+                        {/* GANTI BAGIAN MAP PAYMENT METHOD DENGAN INI */}
+                        {[
+                          { id: 'cash', label: 'Tunai', icon: Banknote },
+                          { id: 'qris', label: 'QRIS', icon: Loader2 },
+                          {
+                            id: 'debit',
+                            label: 'Debit/Kredit',
+                            icon: CreditCard,
+                          },
+                        ].map((m) => (
+                          <button
+                            key={m.id}
+                            // FIX: Casting m.id ke tipe PaymentMethod spesifik
                             onClick={() =>
-                              setSplitPayments(
-                                splitPayments.filter((_, i) => i !== idx)
-                              )
+                              setCustomerForm((prev) => ({
+                                ...prev,
+                                paymentMethod:
+                                  m.id as CustomerFormState['paymentMethod'],
+                              }))
                             }
+                            className={cn(
+                              'flex flex-col items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all',
+                              customerForm.paymentMethod === m.id
+                                ? 'border-primary bg-primary/5 text-primary'
+                                : 'border-muted bg-card hover:border-primary/30'
+                            )}
                           >
-                            <Trash2 size={14} />
-                          </Button>
+                            <m.icon size={20} />
+                            <span className="text-xs font-bold">{m.label}</span>
+                          </button>
+                        ))}
+                      </div>
+
+                      {customerForm.paymentMethod === 'cash' && (
+                        <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
+                          <label className="text-xs font-medium text-muted-foreground">
+                            Uang Diterima
+                          </label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-muted-foreground">
+                              Rp
+                            </span>
+                            <Input
+                              type="number"
+                              className="pl-9 h-12 text-lg font-mono font-bold"
+                              placeholder="0"
+                              value={cashGiven}
+                              onChange={(e) =>
+                                setCashGiven(
+                                  e.target.value === ''
+                                    ? ''
+                                    : parseFloat(e.target.value)
+                                )
+                              }
+                            />
+                          </div>
+                          <div className="flex gap-2 mt-2">
+                            {[50000, 100000].map((amt) => (
+                              <Badge
+                                key={amt}
+                                variant="outline"
+                                className="cursor-pointer hover:bg-muted py-1"
+                                onClick={() => setCashGiven(amt)}
+                              >
+                                {formatRupiah(amt)}
+                              </Badge>
+                            ))}
+                            <Badge
+                              variant="outline"
+                              className="cursor-pointer hover:bg-muted py-1 ml-auto border-primary text-primary"
+                              onClick={() => setCashGiven(finalTotal)}
+                            >
+                              Uang Pas
+                            </Badge>
+                          </div>
+                          {Number(cashGiven) > finalTotal && (
+                            <div className="p-3 bg-green-500/10 text-green-700 rounded-lg text-sm font-bold flex justify-between">
+                              <span>Kembali:</span>
+                              <span>
+                                {formatRupiah(Number(cashGiven) - finalTotal)}
+                              </span>
+                            </div>
+                          )}
                         </div>
-                      ))}
-                      {remainingSplit > 0 && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full text-xs h-8 border-dashed"
-                          onClick={() =>
-                            setSplitPayments([
-                              ...splitPayments,
-                              {
-                                method: 'cash',
-                                amount: remainingSplit,
-                                referenceId: '',
-                              },
-                            ])
-                          }
-                        >
-                          <Plus size={12} className="mr-1" /> Tambah Split
-                        </Button>
+                      )}
+
+                      {customerForm.paymentMethod === 'debit' && (
+                        <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-2">
+                          <Input
+                            placeholder="Nama Bank (BCA, Mandiri...)"
+                            className="col-span-2"
+                            value={debitForm.bankName}
+                            onChange={(e) =>
+                              setDebitForm({
+                                ...debitForm,
+                                bankName: e.target.value,
+                              })
+                            }
+                          />
+                          <Input
+                            placeholder="4 Digit Terakhir"
+                            maxLength={4}
+                            value={debitForm.lastFourDigits}
+                            onChange={(e) =>
+                              setDebitForm({
+                                ...debitForm,
+                                lastFourDigits: e.target.value,
+                              })
+                            }
+                          />
+                          <Input
+                            placeholder="Kode Approval / Ref"
+                            value={debitForm.approvalCode}
+                            onChange={(e) =>
+                              setDebitForm({
+                                ...debitForm,
+                                approvalCode: e.target.value,
+                              })
+                            }
+                          />
+                        </div>
                       )}
                     </div>
                   ) : (
-                    customerForm.paymentMethod === 'cash' && (
-                      <div className="space-y-2 pt-2">
-                        <label className="text-sm font-medium">
-                          Uang Diterima
-                        </label>
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-muted-foreground">
-                            Rp
-                          </span>
-                          <Input
-                            type="number"
-                            placeholder="0"
-                            className={cn(
-                              'pl-10 text-xl font-bold h-12 transition-all',
-                              (cashGiven || 0) > 0 &&
-                                (cashGiven || 0) < finalTotal
-                                ? 'border-destructive focus-visible:ring-destructive'
-                                : ''
-                            )}
-                            value={cashGiven === 0 ? '' : cashGiven}
-                            onChange={(e) =>
-                              setCashGiven(
-                                e.target.value === ''
-                                  ? 0
-                                  : parseFloat(e.target.value)
-                              )
-                            }
-                            autoFocus
-                          />
-                        </div>
-                        {/* Quick Amounts */}
-                        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                          {[50000, 100000, finalTotal].map((amt) => (
-                            <Button
-                              key={amt}
-                              variant="outline"
-                              size="sm"
-                              className="rounded-full text-xs shrink-0"
-                              onClick={() => setCashGiven(Math.ceil(amt))}
-                            >
-                              {amt === finalTotal
-                                ? 'Uang Pas'
-                                : formatRupiah(amt)}
-                            </Button>
-                          ))}
-                        </div>
+                    // SPLIT BILL UI
+                    <div className="space-y-4 border rounded-xl p-4 bg-muted/10">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-bold">Sisa Tagihan</span>
+                        <span
+                          className={cn(
+                            'font-mono font-bold',
+                            remainingSplit > 0
+                              ? 'text-red-500'
+                              : 'text-green-600'
+                          )}
+                        >
+                          {formatRupiah(remainingSplit)}
+                        </span>
                       </div>
-                    )
-                  )}
 
-                  {/* Form Debit (Jika dipilih) */}
-                  {!isSplitMode && customerForm.paymentMethod === 'debit' && (
-                    <div className="bg-blue-50/5 p-3 rounded border border-blue-500/20 space-y-2">
-                      <Input
-                        placeholder="Nama Bank"
-                        className="h-8 text-xs"
-                        value={debitForm.bankName}
-                        onChange={(e) =>
-                          setDebitForm({
-                            ...debitForm,
-                            bankName: e.target.value,
-                          })
-                        }
-                      />
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="4 Digit Akhir"
-                          maxLength={4}
-                          className="h-8 text-xs"
-                          value={debitForm.lastFourDigits}
-                          onChange={(e) =>
-                            setDebitForm({
-                              ...debitForm,
-                              lastFourDigits: e.target.value,
-                            })
-                          }
-                        />
-                        <Input
-                          placeholder="Approval Code"
-                          className="h-8 text-xs"
-                          value={debitForm.approvalCode}
-                          onChange={(e) =>
-                            setDebitForm({
-                              ...debitForm,
-                              approvalCode: e.target.value,
-                            })
-                          }
-                        />
+                      {/* Input Split */}
+                      {remainingSplit > 0 && (
+                        <div className="flex gap-2 items-end">
+                          <div className="flex-1">
+                            <label className="text-[10px] uppercase text-muted-foreground font-bold">
+                              Metode
+                            </label>
+                            <select
+                              id="split-method"
+                              className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <option value="cash">Tunai</option>
+                              <option value="debit">Debit/Kredit</option>
+                              <option value="qris">QRIS</option>
+                            </select>
+                          </div>
+                          <div className="flex-1">
+                            <label className="text-[10px] uppercase text-muted-foreground font-bold">
+                              Nominal
+                            </label>
+                            <Input
+                              id="split-amount"
+                              type="number"
+                              defaultValue={remainingSplit}
+                              className="h-9"
+                            />
+                          </div>
+                          <Button
+                            size="sm"
+                            // GANTI CODE DI DALAM ONCLICK TOMBOL PLUS (+) SPLIT BILL
+                            onClick={() => {
+                              // Ambil elemen select
+                              const selectElement = document.getElementById(
+                                'split-method'
+                              ) as HTMLSelectElement;
+                              const inputElement = document.getElementById(
+                                'split-amount'
+                              ) as HTMLInputElement;
+
+                              // FIX: Type Casting yang aman
+                              const method =
+                                selectElement.value as PaymentItem['method'];
+                              const amount = parseFloat(inputElement.value);
+
+                              if (amount <= 0) return;
+
+                              setSplitPayments([
+                                ...splitPayments,
+                                {
+                                  method,
+                                  amount,
+                                  referenceId: `SPLIT-${Date.now()}`,
+                                },
+                              ]);
+                            }}
+                          >
+                            <Plus size={16} />
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* List Split Payments */}
+                      <div className="space-y-2 mt-2">
+                        {splitPayments.map((p, idx) => (
+                          <div
+                            key={idx}
+                            className="flex justify-between items-center text-sm bg-background p-2 rounded border border-dashed"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px]"
+                              >
+                                {p.method.toUpperCase()}
+                              </Badge>
+                              <span>{formatRupiah(p.amount)}</span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                              onClick={() =>
+                                setSplitPayments(
+                                  splitPayments.filter((_, i) => i !== idx)
+                                )
+                              }
+                            >
+                              <Trash2 size={14} />
+                            </Button>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
-                </div>
-              </ScrollArea>
-            </div>
+                </section>
+              </div>
 
-            {/* FOOTER (STICKY) */}
-            <div className="p-4 border-t border-border bg-card shrink-0 z-10 shadow-[0_-5px_10px_rgba(0,0,0,0.02)]">
-              {/* Info Kembalian Realtime */}
-              {!isSplitMode && customerForm.paymentMethod === 'cash' && (
-                <div className="flex justify-between items-center mb-3 text-sm">
-                  <span className="text-muted-foreground">Kembali</span>
-                  <span
-                    className={cn(
-                      'font-bold text-lg',
-                      // FIX: Pastikan cashGiven diubah jadi 0 jika string kosong
-                      (cashGiven === '' ? 0 : cashGiven) - finalTotal >= 0
-                        ? 'text-green-500'
-                        : 'text-destructive'
-                    )}
-                  >
-                    {/* FIX: Gunakan logika yang sama untuk formatRupiah */}
-                    {formatRupiah(
-                      Math.max(
-                        0,
-                        (cashGiven === '' ? 0 : cashGiven) - finalTotal
-                      )
-                    )}
-                  </span>
-                </div>
-              )}
-
-              <div className="flex gap-3">
+              {/* Action Buttons */}
+              <div className="mt-auto pt-6 flex gap-3">
                 <Button
                   variant="outline"
-                  className="flex-1 h-12"
+                  className="flex-1"
                   onClick={() => setIsCheckoutOpen(false)}
                 >
                   Batal
                 </Button>
                 <Button
-                  className="flex-[2] h-12 font-bold text-base shadow-lg shadow-primary/20"
-                  disabled={
-                    isPending ||
-                    // FIX: Pastikan cashGiven diubah jadi 0 jika string kosong saat perbandingan
-                    (!isSplitMode &&
-                      customerForm.paymentMethod === 'cash' &&
-                      (cashGiven === '' ? 0 : cashGiven) < finalTotal) ||
-                    (isSplitMode && remainingSplit > 0)
-                  }
+                  className="flex-[2] font-bold text-lg h-12"
                   onClick={handleCheckout}
+                  disabled={isPending}
                 >
                   {isPending ? (
-                    <Loader2 className="animate-spin" />
+                    <Loader2 className="animate-spin mr-2" />
                   ) : (
-                    `Bayar ${formatRupiah(finalTotal)}`
+                    <CheckCircle2 className="mr-2" />
                   )}
+                  {isPending
+                    ? 'Memproses...'
+                    : `Bayar ${formatRupiah(
+                        isSplitMode
+                          ? totalPaidSplit
+                          : customerForm.paymentMethod === 'cash'
+                          ? finalTotal
+                          : finalTotal
+                      )}`}
                 </Button>
               </div>
             </div>

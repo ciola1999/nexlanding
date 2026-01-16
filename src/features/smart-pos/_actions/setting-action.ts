@@ -1,13 +1,12 @@
 'use server';
 
-import { db } from '@/db'; // Import dari src/db/index.ts
-import { storeSettings } from '@/features/smart-pos/db/schema';
+import { db } from '@/db';
+import { storeSettings, taxes } from '@/features/smart-pos/db/schema'; // Tambahkan taxes
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 
 // --- SCHEMA VALIDASI (ZOD) ---
-// Kita buat agak longgar biar user tidak frustasi, tapi tetap type-safe
 const settingsFormSchema = z.object({
   name: z.string().min(1, 'Nama toko wajib diisi'),
   description: z.string().optional(),
@@ -19,28 +18,48 @@ const settingsFormSchema = z.object({
     .optional()
     .or(z.literal('')),
   receiptFooter: z.string().optional(),
-  taxRate: z.string().optional(), // Input number dari HTML biasanya string
+
+  // Tax rate tetap kita terima dari form, tapi penanganannya beda nanti
+  taxRate: z.string().optional(),
 });
 
 export type SettingsState = {
   status: 'idle' | 'success' | 'error';
   message: string;
   errors?: Record<string, string[]>;
-  timestamp?: number; // Trigger untuk useEffect di client
+  timestamp?: number;
 };
 
-// --- GET SETTINGS ---
+// --- GET SETTINGS (Update: Ambil Pajak Juga) ---
 export async function getStoreSettings() {
   try {
-    // Selalu ambil ID 1
-    const settings = await db
+    // 1. Ambil Setting Toko
+    const settingsPromise = db
       .select()
       .from(storeSettings)
       .where(eq(storeSettings.id, 1))
       .limit(1);
 
-    if (settings.length === 0) return null;
-    return settings[0];
+    // 2. Ambil Data Pajak (PPn)
+    const taxPromise = db
+      .select()
+      .from(taxes)
+      .where(eq(taxes.name, 'PPn')) // Kita asumsikan pajak utama namanya 'PPn'
+      .limit(1);
+
+    // Jalankan parallel biar cepat
+    const [settingsRes, taxRes] = await Promise.all([
+      settingsPromise,
+      taxPromise,
+    ]);
+
+    if (settingsRes.length === 0) return null;
+
+    // Gabungkan data untuk dikirim ke UI
+    return {
+      ...settingsRes[0],
+      taxRate: taxRes.length > 0 ? taxRes[0].rate : '0', // Inject taxRate manual ke object
+    };
   } catch (error) {
     console.error('Failed to fetch settings:', error);
     return null;
@@ -60,7 +79,7 @@ export async function updateStoreSettingsAction(
     phone: formData.get('phone'),
     email: formData.get('email'),
     receiptFooter: formData.get('receiptFooter'),
-    taxRate: formData.get('taxRate'),
+    taxRate: formData.get('taxRate'), // Ambil input taxRate
   };
 
   const validated = settingsFormSchema.safeParse(rawData);
@@ -76,48 +95,77 @@ export async function updateStoreSettingsAction(
   try {
     const data = validated.data;
 
-    // Konversi taxRate ke string decimal yang valid (handle empty)
-    const finalTaxRate = data.taxRate ? data.taxRate : '0';
+    // Konversi taxRate
+    const newTaxRate = data.taxRate ? data.taxRate.toString() : '0';
 
-    // 2. Lakukan Upsert (Insert ID 1, kalau konflik ID 1 -> Update)
-    await db
-      .insert(storeSettings)
-      .values({
-        id: 1, // FORCE SINGLETON: Selalu pakai ID 1
-        name: data.name,
-        description: data.description || '',
-        address: data.address,
-        phone: data.phone || '',
-        email: data.email || '',
-        receiptFooter: data.receiptFooter || '',
-        taxRate: finalTaxRate,
-      })
-      .onConflictDoUpdate({
-        target: storeSettings.id,
-        set: {
+    // 🔥 TRANSACTION START: Bungkus 2 update dalam 1 transaksi
+    await db.transaction(async (tx) => {
+      // STEP 1: Update Info Toko (TANPA taxRate)
+      await tx
+        .insert(storeSettings)
+        .values({
+          id: 1,
           name: data.name,
           description: data.description || '',
           address: data.address,
           phone: data.phone || '',
           email: data.email || '',
+          website: '', // Jika ada field website di schema
           receiptFooter: data.receiptFooter || '',
-          taxRate: finalTaxRate,
-          updatedAt: new Date(),
-        },
-      });
+          // ❌ JANGAN MASUKKAN taxRate DI SINI
+        })
+        .onConflictDoUpdate({
+          target: storeSettings.id,
+          set: {
+            name: data.name,
+            description: data.description || '',
+            address: data.address,
+            phone: data.phone || '',
+            email: data.email || '',
+            receiptFooter: data.receiptFooter || '',
+            updatedAt: new Date(),
+          },
+        });
 
-    revalidatePath('/settings'); // Sesuaikan dengan route halaman kamu nanti
+      // STEP 2: Update Tabel Taxes (PPn)
+      // Kita pakai logic UPSERT juga untuk pajak, biar kalau tabel kosong dia otomatis buat
+      // Asumsi kita kelola pajak dengan nama 'PPn'
+
+      // Cek dulu apakah 'PPn' ada?
+      const existingTax = await tx
+        .select()
+        .from(taxes)
+        .where(eq(taxes.name, 'PPn'));
+
+      if (existingTax.length > 0) {
+        // Update
+        await tx
+          .update(taxes)
+          .set({ rate: newTaxRate })
+          .where(eq(taxes.name, 'PPn'));
+      } else {
+        // Insert baru jika belum ada
+        await tx.insert(taxes).values({
+          name: 'PPn',
+          rate: newTaxRate,
+          isActive: true,
+        });
+      }
+    });
+    // 🔥 TRANSACTION END
+
+    revalidatePath('/dashboard/settings'); // Pastikan path ini sesuai url browser kamu
 
     return {
       status: 'success',
-      message: 'Pengaturan toko berhasil diperbarui!',
+      message: 'Pengaturan toko & pajak berhasil diperbarui!',
       timestamp: Date.now(),
     };
   } catch (error) {
     console.error('Update Error:', error);
     return {
       status: 'error',
-      message: 'Terjadi kesalahan sistem saat menyimpan data.',
+      message: 'Gagal menyimpan. Cek koneksi database.',
     };
   }
 }

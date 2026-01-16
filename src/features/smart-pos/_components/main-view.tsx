@@ -25,7 +25,7 @@ import { DashboardData } from '../services/dashboard.service';
 import HistoryList from './HistoryList';
 import LogoutButton from '@/features/smart-pos/_components/logout-button';
 import SettingsView from './views/SettingsView'; // Import komponen baru
-import type { StoreSetting } from '@/features/smart-pos/db/schema';
+import type { StoreSetting, Tax } from '@/features/smart-pos/db/schema';
 
 // Import schema database
 import { Product, Order, OrderItem } from '../db/schema';
@@ -57,6 +57,7 @@ interface SmartPosMainViewProps {
   dashboardData: DashboardData;
   transactionHistory: HistoryRecord[];
   storeSettings: StoreSetting | null; // 👈 Terima prop baru
+  taxesData: Tax[];
 }
 
 export default function SmartPosMainView({
@@ -65,6 +66,7 @@ export default function SmartPosMainView({
   dashboardData,
   storeSettings,
   transactionHistory = [],
+  taxesData, // 👈 2. DESTRUCTURE PROPS
 }: SmartPosMainViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -151,13 +153,19 @@ export default function SmartPosMainView({
           </div>
         );
       case 'settings':
-        return <SettingsView initialData={storeSettings} />;
+        return (
+          <SettingsView
+            initialData={storeSettings ?? null}
+            taxesData={taxesData} // 👈 4. OPER KE SETTINGS VIEW
+          />
+        );
       case 'cashier':
       default:
         return (
           <POSInterface
             initialProducts={products || []}
             storeSettings={storeSettings}
+            taxesData={taxesData} // 👈 TAMBAHKAN INI (Oper data pajak ke Kasir)
           />
         );
     }

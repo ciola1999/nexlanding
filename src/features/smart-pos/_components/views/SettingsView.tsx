@@ -1,8 +1,10 @@
+// E:\Belajar Javascript\.vscode\Project-Freelance\nexlanding\frontend\src\features\smart-pos\_components\views\SettingsView.tsx
+
 'use client';
 
 import { useActionState, useEffect, useRef } from 'react';
 import { updateStoreSettingsAction } from '@/features/smart-pos/_actions/setting-action';
-import type { StoreSetting } from '@/features/smart-pos/db/schema';
+import type { StoreSetting, Tax } from '@/features/smart-pos/db/schema';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,15 +17,28 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { Loader2, Store, MapPin, ReceiptText, Save, Globe } from 'lucide-react';
+import {
+  Loader2,
+  Store,
+  MapPin,
+  ReceiptText,
+  Save,
+  Globe,
+  Percent,
+  WalletCards,
+} from 'lucide-react';
 import gsap from 'gsap';
 import { cn } from '@/lib/utils';
 
 interface SettingsViewProps {
   initialData: StoreSetting | null;
+  taxesData: Tax[]; // 👈 Tambahkan ini
 }
 
-export default function SettingsView({ initialData }: SettingsViewProps) {
+export default function SettingsView({
+  initialData,
+  taxesData,
+}: SettingsViewProps) {
   const [state, formAction, isPending] = useActionState(
     updateStoreSettingsAction,
     {
@@ -56,6 +71,8 @@ export default function SettingsView({ initialData }: SettingsViewProps) {
       toast.error('Gagal Menyimpan', { description: state.message });
     }
   }, [state, state.timestamp]);
+
+  const ppnData = taxesData.find((t) => t.name === 'PPn');
 
   return (
     <div
@@ -189,30 +206,80 @@ export default function SettingsView({ initialData }: SettingsViewProps) {
             </CardContent>
           </Card>
 
-          {/* --- CARD 4: PAJAK --- */}
+          {/* --- CARD 4: PAJAK (UPDATED) --- */}
           <Card className="settings-card lg:col-span-1 border-white/10 bg-[#18181b] shadow-lg">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-amber-400">
-                <ReceiptText className="w-5 h-5" />
-                Pajak (PPN)
+                <Percent className="w-5 h-5" />
+                Konfigurasi Pajak
               </CardTitle>
+              <CardDescription className="text-gray-400 text-xs">
+                Pajak (PPn) ini otomatis dihitung saat checkout.
+              </CardDescription>
             </CardHeader>
+
             <CardContent>
-              <div className="space-y-2">
-                <Label className="text-gray-300">Persentase (%)</Label>
-                <div className="relative">
-                  <Input
-                    name="taxRate"
-                    type="number"
-                    step="0.01"
-                    defaultValue={initialData?.taxRate?.toString() || '0'}
-                    className="bg-black/50 border-white/20 text-white text-right pr-8 font-mono focus:border-amber-500"
-                  />
-                  <span className="absolute right-3 top-2.5 text-sm text-gray-500">
-                    %
-                  </span>
+              {/* LOGIC BARU: Jika kosong, tampilkan Input Default, Jika ada isinya, tampilkan datanya */}
+              {taxesData.length === 0 ? (
+                /* --- STATE 1: DATABASE KOSONG (Tampilkan Input agar bisa diisi) --- */
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <Label className="text-gray-200 font-medium">
+                      PPn (Default)
+                    </Label>
+                    <div className="w-2 h-2 rounded-full bg-gray-500 animate-pulse" />
+                  </div>
+                  <div className="relative group">
+                    {/* PENTING: name="taxRate" harus sama dengan yang diminta Server Action */}
+                    <Input
+                      name="taxRate"
+                      type="number"
+                      step="0.01"
+                      defaultValue="0"
+                      placeholder="11"
+                      className="bg-black/50 border-white/20 text-white text-right pr-10 font-mono text-lg focus:border-amber-500 transition-all"
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-amber-400 transition-colors">
+                      %
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-amber-500/80 italic">
+                    *Simpan untuk membuat data pajak baru.
+                  </p>
                 </div>
-              </div>
+              ) : (
+                /* --- STATE 2: DATA ADA (Looping Data) --- */
+                taxesData.map((tax) => (
+                  <div key={tax.id} className="space-y-3 mb-4 last:mb-0">
+                    <div className="flex justify-between items-center">
+                      <Label className="text-gray-200 font-medium">
+                        {tax.name}
+                      </Label>
+                      <div
+                        className={`w-2 h-2 rounded-full ${
+                          tax.isActive
+                            ? 'bg-green-500 shadow-[0_0_8px_lime]'
+                            : 'bg-red-500'
+                        }`}
+                      />
+                    </div>
+
+                    <div className="relative group">
+                      {/* Kita set name="taxRate" juga agar logic server action tetap jalan untuk single tax */}
+                      <Input
+                        name="taxRate"
+                        type="number"
+                        step="0.01"
+                        defaultValue={tax.rate.toString()}
+                        className="bg-black/50 border-white/20 text-white text-right pr-10 font-mono text-lg focus:border-amber-500 transition-all"
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-amber-400 transition-colors">
+                        %
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
             </CardContent>
           </Card>
         </div>
