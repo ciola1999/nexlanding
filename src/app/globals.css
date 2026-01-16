@@ -158,45 +158,29 @@
   background-color: rgba(255, 255, 255, 0.3);
 }
 
-/* app/globals.css */
-
-/* app/globals.css */
-
-/* app/globals.css */
-
 @media print {
-  /* 1. Atur Kertas */
+  /* 1. Atur Kertas & Hapus Header/Footer Browser */
   @page {
+    margin: 0mm;
     size: auto;
-    margin: 0mm; /* Wajib 0mm */
   }
 
-  /* 2. Sembunyikan BODY (tapi jangan di-nol-kan height-nya) */
+  /* 2. Reset Body supaya Putih & Hitam (Penting buat Dark Mode) */
   body {
-    visibility: hidden !important;
-    background-color: white;
+    background-color: white !important;
+    color: black !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  /* 3. Sembunyikan semua anak body secara default */
-  body * {
-    visibility: hidden;
-  }
-
-  /* 4. ULTIMATE FIX: Munculkan Struk & Paksa ke Pojok Layar */
-  #printable-content {
-    visibility: visible !important; /* Paksa muncul */
-    position: fixed !important; /* Lepas dari struktur HTML normal */
-    top: 0 !important;
-    left: 0 !important;
-    width: 100% !important; /* Ikuti lebar kertas settingan printer */
+  /* 3. Reset Margin HTML */
+  html,
+  body {
     margin: 0 !important;
     padding: 0 !important;
-    z-index: 99999 !important; /* Pastikan paling atas */
-    background: white !important;
+    height: 100%;
+    width: 100%;
   }
 
-  /* 5. Pastikan isi dalam struk juga visible */
-  #printable-content * {
-    visibility: visible !important;
-  }
+  /* HAPUS SEMUA BAGIAN LAIN (Poin 4 & 5 TADI DIBUANG) */
 }

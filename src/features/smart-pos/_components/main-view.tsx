@@ -10,6 +10,7 @@ import {
   History,
   LayoutDashboard,
   LucideIcon,
+  Settings,
 } from 'lucide-react';
 import { Toaster } from 'sonner';
 import gsap from 'gsap';
@@ -23,6 +24,8 @@ import DashboardView from './DashboardView';
 import { DashboardData } from '../services/dashboard.service';
 import HistoryList from './HistoryList';
 import LogoutButton from '@/features/smart-pos/_components/logout-button';
+import SettingsView from './views/SettingsView'; // Import komponen baru
+import type { StoreSetting } from '@/features/smart-pos/db/schema';
 
 // Import schema database
 import { Product, Order, OrderItem } from '../db/schema';
@@ -53,12 +56,14 @@ interface SmartPosMainViewProps {
   currentView: string | undefined;
   dashboardData: DashboardData;
   transactionHistory: HistoryRecord[];
+  storeSettings: StoreSetting | null; // 👈 Terima prop baru
 }
 
 export default function SmartPosMainView({
   products,
   currentView,
   dashboardData,
+  storeSettings,
   transactionHistory = [],
 }: SmartPosMainViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -69,6 +74,7 @@ export default function SmartPosMainView({
   const isInventoryMode = view === 'inventory';
   const isDashboardMode = view === 'dashboard';
   const isHistoryMode = view === 'history';
+  const isSettingsMode = view === 'settings'; // 👈 2. TAMBAHKAN VARIABLE INI
 
   const totalProducts = products ? products.length : 0;
   const lowStockCount = products
@@ -144,9 +150,16 @@ export default function SmartPosMainView({
             </div>
           </div>
         );
+      case 'settings':
+        return <SettingsView initialData={storeSettings} />;
       case 'cashier':
       default:
-        return <POSInterface initialProducts={products || []} />;
+        return (
+          <POSInterface
+            initialProducts={products || []}
+            storeSettings={storeSettings}
+          />
+        );
     }
   };
 
@@ -186,6 +199,13 @@ export default function SmartPosMainView({
               active={isHistoryMode}
               icon={History}
               label="Riwayat"
+            />
+            {/* 3. TOMBOL SETTINGS DITAMBAHKAN DI SINI */}
+            <NavButton
+              href="/projects/smart-pos?view=settings"
+              active={isSettingsMode}
+              icon={Settings}
+              label="Settings"
             />
             <div className="w-px h-5 bg-white/10 mx-2 self-center" />
             <NavButton

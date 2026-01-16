@@ -4,13 +4,7 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
 
-  // ❌ JANGAN TARUH bodySizeLimit DI SINI
-
-  // ✅ TARUH DI DALAM 'experimental'
   experimental: {
     serverActions: {
       bodySizeLimit: '1mb', // <--- Di sini tempatnya

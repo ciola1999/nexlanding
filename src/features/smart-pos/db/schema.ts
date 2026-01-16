@@ -113,6 +113,33 @@ export const orderItems = pgTable('order_items', {
   }).default('0'),
 });
 
+// --- STORE SETTINGS (NEW) ---
+export const storeSettings = pgTable('store_settings', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull().default('Toko Saya'),
+  description: text('description'),
+  address: text('address'),
+  phone: varchar('phone', { length: 20 }),
+  email: text('email'),
+  website: text('website'),
+  logoUrl: text('logo_url'),
+
+  // Keuangan
+  taxRate: decimal('tax_rate', { precision: 5, scale: 2 }).default('0'), // Contoh: 11.00
+  currency: varchar('currency', { length: 3 }).default('IDR'),
+
+  // Struk / Receipt Config
+  receiptFooter: text('receipt_footer').default(
+    'Terima kasih telah berbelanja!'
+  ),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at')
+    .defaultNow()
+    .notNull()
+    .$onUpdate(() => new Date()),
+});
+
 // --- RELATIONS ---
 export const usersRelations = relations(users, ({ many }) => ({
   orders: many(orders),
@@ -151,3 +178,6 @@ export type Order = typeof orders.$inferSelect;
 export type OrderItem = typeof orderItems.$inferSelect;
 export type OrderPayment = typeof orderPayments.$inferSelect;
 export type User = typeof users.$inferSelect;
+// Tambahkan Type export di paling bawah
+export type StoreSetting = typeof storeSettings.$inferSelect;
+export type NewStoreSetting = typeof storeSettings.$inferInsert;

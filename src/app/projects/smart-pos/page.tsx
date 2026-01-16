@@ -8,6 +8,7 @@ import { getProducts } from '@/features/smart-pos/_actions/products'; // Pastika
 import { getTransactionHistory } from '@/features/smart-pos/_actions/get-history';
 import { getSession } from '@/lib/auth';
 import { getDashboardData } from '@/features/smart-pos/services/dashboard.service'; // 👈 IMPORT SERVICE KITA
+import { getStoreSettings } from '@/features/smart-pos/_actions/setting-action';
 
 import SmartPosMainView from '@/features/smart-pos/_components/main-view';
 import SmartPosSkeleton from '@/features/smart-pos/_components/Skeleton';
@@ -35,21 +36,23 @@ async function PosDataLoader({
   order: 'asc' | 'desc';
 }) {
   // Panggil getProducts dengan parameter sorting
-  const [productsResult, historyResult] = await Promise.all([
-    getProducts(sort, order),
-    getTransactionHistory(),
-    getDashboardData(), // 👈 AMBIL DATA DASHBOARD DI SINI
-  ]);
+  const [productsResult, historyResult, dashboardData, storeSettings] =
+    await Promise.all([
+      getProducts(sort, order),
+      getTransactionHistory(),
+      getDashboardData(), // 👈 AMBIL DATA DASHBOARD DI SINI
+      getStoreSettings(), // 👈 NEW: Fetch Settings
+    ]);
 
   const products = productsResult.success ? productsResult.data : [];
   const history = historyResult.success ? historyResult.data : [];
-  const dashboardData = await getDashboardData(); // DIBUAT DULU
 
   return (
     <SmartPosMainView
       products={products}
       transactionHistory={history}
       dashboardData={dashboardData} // 👈 LEMPAR KE BAWAH
+      storeSettings={storeSettings} // 👈 Pass ke Client Component
       currentView={currentView}
     />
   );

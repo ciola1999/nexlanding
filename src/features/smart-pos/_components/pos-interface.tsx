@@ -56,11 +56,14 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
+import { useReactToPrint } from 'react-to-print';
 import { ReceiptTemplate } from './ReceiptTemplate';
+import type { StoreSetting } from '@/features/smart-pos/db/schema';
 
 // --- TYPES ---
 interface POSInterfaceProps {
   initialProducts: Product[];
+  storeSettings: StoreSetting | null; // 👈 Tambahkan ini
 }
 
 interface CustomerFormState {
@@ -71,7 +74,10 @@ interface CustomerFormState {
   paymentMethod: 'cash' | 'debit' | 'qris'; // Update agar sesuai db
 }
 
-export default function POSInterface({ initialProducts }: POSInterfaceProps) {
+export default function POSInterface({
+  initialProducts,
+  storeSettings,
+}: POSInterfaceProps) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -125,6 +131,8 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
     lastFourDigits: '',
     approvalCode: '',
   });
+
+  const receiptRef = useRef<HTMLDivElement>(null);
 
   // Reset form saat dialog checkout ditutup
   useEffect(() => {
@@ -285,8 +293,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
   // Hitung kembalian real-time
   const change = cashGiven - subtotal;
 
-  // --- CHECKOUT ---
-  // --- CHECKOUT (REVISI) ---
   // --- CHECKOUT (SUDAH DIPERBAIKI UTK SPLIT BILL) ---
   const handleCheckout = async () => {
     // 1. Validasi Meja (Dine In)
@@ -400,6 +406,14 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
       }
     });
   };
+
+  // 1. Setup Hook Print
+  const handlePrint = useReactToPrint({
+    contentRef: receiptRef, // React 19 / Versi Baru
+    // content: () => receiptRef.current, // Kalau error, coba pakai baris ini (Versi Lama)
+    documentTitle: 'Struk Belanja',
+    onAfterPrint: () => console.log('Berhasil print!'),
+  });
 
   // --- 🔥 NEW FEATURE: GENERATE WHATSAPP RECEIPT ---
   const handleSendWhatsApp = () => {
@@ -1138,9 +1152,7 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
 
           {/* GRID TOMBOL */}
           <div className="grid gap-2">
-            <Button size="sm" variant="outline" onClick={() => window.print()}>
-              <Printer className="mr-2 h-3 w-3" /> Cetak Struk
-            </Button>
+            <Button onClick={() => handlePrint()}>Cetak Struk</Button>
 
             {/* 🔥 TOMBOL KIRIM WA BARU 🔥 */}
             <Button
@@ -1164,14 +1176,23 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
       </Dialog>
 
       {/* --- INVISIBLE RECEIPT TEMPLATE (Hanya muncul saat Print) --- */}
-      <div id="printable-content" className="hidden print:block">
+      {/* WRAPPER HIDDEN:
+    Cukup pakai "hidden". Tidak perlu "print:block" karena react-to-print 
+    akan meng-copy isinya ke jendela baru khusus print.
+*/}
+      <div style={{ display: 'none' }}>
         {successData && (
           <ReceiptTemplate
+            ref={receiptRef} // 🔥 WAJIB: Sambungkan Ref disini
             orderId={successData.order.id}
             date={successData.order.createdAt || new Date()}
-            storeName="NexLanding POS"
-            storeAddress="Cabang Utama - Bekasi"
-            cashierName="Kasir"
+            // 🔥 GUNAKAN DATA DARI SETTINGS (JANGAN HARDCODE)
+            storeName={storeSettings?.name || 'NexPOS'}
+            storeAddress={storeSettings?.address || 'Alamat belum diatur'}
+            storePhone={storeSettings?.phone || ''} // No HP Toko
+            receiptFooter={storeSettings?.receiptFooter || ''} // Footer kustom
+            taxRate={Number(storeSettings?.taxRate || 0)} // Pajak
+            cashierName="Kasir" // Nanti bisa ambil dari session user
             customerName={successData.order.customerName || 'Guest'}
             items={successData.items.map((item) => ({
               id: item.id,
@@ -1183,8 +1204,6 @@ export default function POSInterface({ initialProducts }: POSInterfaceProps) {
             paymentMethod={successData.order.paymentMethod}
             cashAmount={successData.cashReceived}
             changeAmount={successData.change}
-            // 🔥 PERBAIKAN DISINI:
-            // Jangan kirim array kosong [], tapi kirim data dari state
             payments={successData.payments || []}
           />
         )}
