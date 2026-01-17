@@ -28,7 +28,12 @@ import { ExportExcelButton } from './history/ExportButton';
 // --- TYPE DEFINITION ---
 type HistoryItem = {
   id: number;
+
+  // 🔥 UPDATE 1: Ratakan struktur (sesuai kolom DB)
+  subtotal: number | null;
+  taxAmount: number | null;
   totalAmount: number;
+
   amountPaid: number | null;
   change: number | null;
   paymentMethod: 'cash' | 'debit' | 'qris' | 'split' | string;
@@ -43,6 +48,11 @@ type HistoryItem = {
     paymentMethod: 'cash' | 'debit' | 'qris' | 'split' | string;
     amount: number;
   }[];
+
+  // ❌ Hapus bagian summary ini karena data sudah ada di root (subtotal & taxAmount di atas)
+  // summary: {
+  //   taxAmount: number;
+  // };
 
   items: {
     id: number;
@@ -143,12 +153,8 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
 
   useGSAP(
     () => {
-      // Hanya jalankan animasi jika ada data
       if (!containerRef.current || history.length === 0) return;
-
-      // Reset dulu biar gak bug saat re-render
       gsap.set('.history-row', { clearProps: 'all' });
-
       gsap.fromTo(
         '.history-row',
         { opacity: 0, y: 10 },
@@ -162,10 +168,9 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
     setExpandedId(expandedId === id ? null : id);
   };
 
-  // ✅ PERBAIKAN STRUKTUR: Return utama membungkus Header & List
   return (
     <div className="space-y-6">
-      {/* 1. SECTION HEADER & TOOLBAR (Selalu Muncul) */}
+      {/* 1. SECTION HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 pb-4 border-b border-white/5">
         <div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
@@ -175,17 +180,14 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
             Pantau pemasukan dan unduh laporan.
           </p>
         </div>
-
-        {/* Toolbar: Filter & Export */}
         <div className="flex flex-wrap items-center gap-2">
           <DateRangeFilter />
           <ExportExcelButton />
         </div>
       </div>
 
-      {/* 2. SECTION LIST / EMPTY STATE */}
+      {/* 2. SECTION LIST */}
       {!history || history.length === 0 ? (
-        // --- EMPTY STATE ---
         <div className="text-center py-20 text-gray-500 flex flex-col items-center animate-in fade-in zoom-in duration-500">
           <div className="bg-neutral-900/50 w-24 h-24 rounded-full flex items-center justify-center mb-4 border border-white/5 shadow-inner">
             <ShoppingBag className="w-10 h-10 opacity-30" />
@@ -198,7 +200,6 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
           </p>
         </div>
       ) : (
-        // --- LIST DATA ---
         <div ref={containerRef} className="flex flex-col w-full pb-20">
           {history.map((order) => {
             const badge = getPaymentBadge(order.paymentMethod);
@@ -218,7 +219,6 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
                   onClick={() => toggleExpand(order.id)}
                   className="p-4 sm:p-5 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 select-none"
                 >
-                  {/* Kiri: Icon & Info Utama */}
                   <div className="flex items-start sm:items-center gap-4">
                     <div
                       className={cn(
@@ -256,7 +256,6 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
                     </div>
                   </div>
 
-                  {/* Kanan: Harga & Toggle */}
                   <div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto pl-[4rem] sm:pl-0">
                     <div className="text-right">
                       <div className="text-lg font-bold text-white tracking-tight">
@@ -416,8 +415,28 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
                         {/* --- FOOTER & TOTAL --- */}
                         <div className="bg-[#dfff4f]/5 border-t border-[#dfff4f]/10 p-4">
                           <div className="flex flex-col gap-2">
-                            {/* Total Utama */}
+                            {/* 🔥 UPDATE 2: Tambah Baris Subtotal */}
                             <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-400 uppercase font-bold tracking-widest">
+                                Subtotal
+                              </span>
+                              <span className="text-sm font-mono text-gray-300">
+                                {formatRupiah(order.subtotal || 0)}
+                              </span>
+                            </div>
+
+                            {/* Baris Pajak */}
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-400 uppercase font-bold tracking-widest">
+                                Pajak (Tax)
+                              </span>
+                              <span className="text-sm font-mono text-gray-300">
+                                {formatRupiah(order.taxAmount || 0)}
+                              </span>
+                            </div>
+
+                            {/* Total Utama */}
+                            <div className="flex justify-between items-center mt-2 pt-2 border-t border-dashed border-white/10">
                               <span className="text-xs text-[#dfff4f] uppercase font-bold tracking-widest">
                                 Total Tagihan
                               </span>
@@ -502,7 +521,7 @@ export default function HistoryList({ history }: { history: HistoryItem[] }) {
         </div>
       )}
 
-      {/* 3. DIALOG REPRINT (Global) */}
+      {/* 3. DIALOG REPRINT */}
       <ReprintDialog
         open={reprintOpen}
         onOpenChange={setReprintOpen}

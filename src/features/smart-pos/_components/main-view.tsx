@@ -28,7 +28,7 @@ import SettingsView from './views/SettingsView'; // Import komponen baru
 import type { StoreSetting, Tax } from '@/features/smart-pos/db/schema';
 
 // Import schema database
-import { Product, Order, OrderItem } from '../db/schema';
+import { Product, Order, OrderItem, OrderPayment } from '../db/schema';
 
 // 🔥 UPDATE PENTING DI SINI:
 // Kita definisikan struktur data riwayat agar mengenali kolom Snapshot
@@ -41,6 +41,7 @@ export type HistoryRecord = Order & {
     // Relasi produk (bisa null jika dihapus)
     product: Product | null;
   })[];
+  payments: OrderPayment[];
 };
 
 interface NavButtonProps {

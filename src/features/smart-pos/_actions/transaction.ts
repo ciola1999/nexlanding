@@ -4,7 +4,7 @@ import { db } from '@/db';
 import {
   orders,
   orderItems,
-  orderPayments, // 👈 UPDATE: Import tabel baru
+  orderPayments,
   products,
   type Order,
 } from '@/features/smart-pos/db/schema';
@@ -23,22 +23,25 @@ type CheckoutItem = {
   price: number;
 };
 
-// 1. UPDATE: Struktur Data Pembayaran
 type PaymentDetail = {
   method: 'cash' | 'debit' | 'qris';
   amount: number;
-  referenceId?: string; // Opsional untuk No Kartu / Ref QRIS
+  referenceId?: string;
 };
 
-// 2. UPDATE: CustomerData sekarang menerima Array Payment
 type CustomerData = {
   orderType: 'dine_in' | 'take_away';
   tableNumber: string;
   customerName?: string;
   customerPhone?: string;
-
-  // 🔥 KUNCI SPLIT BILL: Kita terima array, bukan single value
   payments: PaymentDetail[];
+
+  // 🔥 UPDATE 1: Tambahkan field untuk menerima info Pajak dari Frontend
+  summary: {
+    taxAmount: number;
+    // Jika nanti ada diskon, bisa taruh sini juga
+    // discountAmount?: number;
+  };
 };
 
 export async function processCheckout(
@@ -79,28 +82,33 @@ export async function processCheckout(
 
       const nextQueueNumber = (lastOrderToday?.queueNumber ?? 0) + 1;
 
-      // B. Hitung Total Tagihan (Total Amount)
-      const totalAmount = items.reduce(
+      // B. Hitung Total Tagihan
+
+      // 1. Hitung Subtotal (Harga murni barang)
+      const subtotal = items.reduce(
         (sum, item) => sum + item.price * item.quantity,
         0
       );
 
-      // 🔥 UPDATE LOGIC: Hitung Total yang Dibayar (Sum of Array)
+      // 🔥 UPDATE 2: Ambil Pajak dari parameter yang dikirim Frontend
+      const taxAmount = customer.summary?.taxAmount || 0;
+
+      // 🔥 UPDATE 3: Hitung Total Akhir (Subtotal + Tax)
+      const finalTotalAmount = subtotal + taxAmount;
+
+      // Logic Validasi Pembayaran
       const totalPaid = customer.payments.reduce((sum, p) => sum + p.amount, 0);
 
-      // Cek apakah uang pembayaran kurang
-      if (totalPaid < totalAmount) {
+      // Cek apakah uang pembayaran kurang (gunakan finalTotalAmount)
+      if (totalPaid < finalTotalAmount) {
         throw new Error(
-          `Pembayaran kurang! Total Tagihan: ${totalAmount}, Total Dibayar: ${totalPaid}`
+          `Pembayaran kurang! Total Tagihan: ${finalTotalAmount}, Total Dibayar: ${totalPaid}`
         );
       }
 
       // Hitung Kembalian
-      const change = totalPaid - totalAmount;
+      const change = totalPaid - finalTotalAmount;
 
-      // 🔥 UPDATE LOGIC: Tentukan Payment Method Utama
-      // Jika pembayaran lebih dari 1 jenis, tandai sebagai 'split'
-      // Jika cuma 1, tandai sesuai metodenya (agar backward compatible)
       const mainPaymentMethod =
         customer.payments.length > 1 ? 'split' : customer.payments[0].method;
 
@@ -108,13 +116,15 @@ export async function processCheckout(
       const [insertedOrder] = await tx
         .insert(orders)
         .values({
-          totalAmount,
-          orderType: customer.orderType,
-          paymentMethod: mainPaymentMethod, // 'cash', 'debit', 'qris', atau 'split'
+          // 🔥 UPDATE 4: Masukkan data yang lengkap ke DB
+          subtotal: subtotal, // Pastikan kolom ini ada di schema
+          taxAmount: taxAmount, // Pastikan kolom ini ada di schema
+          totalAmount: finalTotalAmount, // Ini sekarang sudah termasuk pajak
 
+          orderType: customer.orderType,
+          paymentMethod: mainPaymentMethod,
           amountPaid: totalPaid,
           change: change,
-
           customerName: customer.customerName || 'Guest',
           customerPhone: customer.customerPhone || null,
           tableNumber: finalTableNumber,
@@ -122,7 +132,7 @@ export async function processCheckout(
         })
         .returning();
 
-      // 🔥 D. BARU: Insert Detail Pembayaran (Looping Array)
+      // D. Insert Detail Pembayaran
       for (const pay of customer.payments) {
         await tx.insert(orderPayments).values({
           orderId: insertedOrder.id,
@@ -132,7 +142,7 @@ export async function processCheckout(
         });
       }
 
-      // E. Insert Items & Update Stock (Tidak berubah)
+      // E. Insert Items & Update Stock
       for (const item of items) {
         const productInfo = await tx.query.products.findFirst({
           where: eq(products.id, item.id),
@@ -164,7 +174,6 @@ export async function processCheckout(
           skuSnapshot: productInfo.sku || null,
         });
 
-        // Kurangi Stok
         await tx
           .update(products)
           .set({
@@ -185,7 +194,6 @@ export async function processCheckout(
     };
   } catch (error) {
     console.error('Checkout Error:', error);
-
     const errorMessage =
       error instanceof Error ? error.message : 'Gagal memproses transaksi.';
 

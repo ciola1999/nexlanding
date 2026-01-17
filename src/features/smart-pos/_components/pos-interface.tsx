@@ -347,6 +347,9 @@ export default function POSInterface({
         {
           ...customerForm,
           payments: finalPayments,
+          summary: {
+            taxAmount: taxAmount,
+          },
         }
       );
 
@@ -385,42 +388,80 @@ export default function POSInterface({
     if (!successData?.order) return;
     const { order, items, payments } = successData;
 
-    let text = `*STRUK #${order.id}*\n${storeSettings?.name || 'NEXPOS'}\n\n`;
-    text += `📅 ${new Date().toLocaleString('id-ID')}\n`;
-    text += `👤 ${order.customerName || 'Guest'}\n`;
-    if (order.tableNumber) text += `🪑 Meja ${order.tableNumber}\n`;
+    // --- 1. HEADER ---
+    let text = `*STRUK PEMBAYARAN*\n`;
+    text += `*${storeSettings?.name || 'NEXPOS'}*\n`;
     text += `--------------------------------\n`;
+    text += `🆔 Order ID  : #${order.id}\n`;
+    // Gunakan tanggal dari order (createdAt) biar akurat
+    text += `📅 Tanggal   : ${new Date(
+      order.createdAt || new Date()
+    ).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}\n`;
+    text += `👤 Pelanggan : ${order.customerName || 'Guest'}\n`;
+    if (order.tableNumber) text += `🪑 Meja      : ${order.tableNumber}\n`;
+    text += `--------------------------------\n\n`;
 
+    // --- 2. LIST ITEMS ---
     items.forEach((item) => {
-      text += `${item.quantity}x ${item.name.substring(0, 20)}\n`;
-      text += `   @${formatRupiah(item.price)} = ${formatRupiah(
-        item.price * item.quantity
-      )}\n`;
+      // Potong nama barang jika terlalu panjang (opsional, misal max 25 char)
+      const cleanName =
+        item.name.length > 25 ? item.name.substring(0, 22) + '...' : item.name;
+
+      text += `*${cleanName}*\n`;
+      text += `   ${item.quantity} x ${formatRupiah(
+        item.price
+      )} = ${formatRupiah(item.price * item.quantity)}\n`;
     });
 
-    text += `--------------------------------\n`;
-    text += `*TOTAL: ${formatRupiah(order.totalAmount)}*\n`;
+    text += `\n--------------------------------\n`;
 
-    if (order.paymentMethod === 'split' && payments) {
-      text += `\n💳 SPLIT PAYMENT:\n`;
-      payments.forEach(
-        (p) =>
-          (text += `• ${p.method.toUpperCase()}: ${formatRupiah(p.amount)}\n`)
-      );
-    } else if (order.paymentMethod === 'cash') {
-      text += `💵 Tunai: ${formatRupiah(successData.cashReceived || 0)}\n`;
-      text += `🔄 Kembali: ${formatRupiah(successData.change || 0)}\n`;
-    } else {
-      text += `💳 ${order.paymentMethod?.toUpperCase()}\n`;
+    // --- 3. SUMMARY (SUBTOTAL, TAX, TOTAL) ---
+    // Tampilkan subtotal jika ada (dari update backend tadi)
+    if (order.subtotal && order.subtotal > 0) {
+      text += `Subtotal    : ${formatRupiah(order.subtotal)}\n`;
     }
 
-    text += `\nTerima kasih! 🙏`;
+    // Tampilkan pajak jika ada
+    if (order.taxAmount && order.taxAmount > 0) {
+      text += `Pajak       : ${formatRupiah(order.taxAmount)}\n`;
+    }
 
+    // Total Akhir (Tebal)
+    text += `*TOTAL       : ${formatRupiah(order.totalAmount)}*\n`;
+    text += `--------------------------------\n`;
+
+    // --- 4. DETAIL PEMBAYARAN ---
+    if (order.paymentMethod === 'split' && payments) {
+      text += `💳 *SPLIT PAYMENT:*\n`;
+      payments.forEach(
+        (p) =>
+          (text += `   • ${p.method.toUpperCase()} : ${formatRupiah(
+            p.amount
+          )}\n`)
+      );
+    } else {
+      // Single Payment
+      text += `Metode      : ${order.paymentMethod?.toUpperCase()}\n`;
+
+      // Jika Cash, tampilkan Bayar & Kembali (Ambil dari DB: amountPaid & change)
+      if (order.paymentMethod === 'cash') {
+        text += `Tunai       : ${formatRupiah(order.amountPaid || 0)}\n`;
+        text += `Kembali     : ${formatRupiah(order.change || 0)}\n`;
+      }
+    }
+
+    // --- 5. FOOTER ---
+    text += `\n_Terima kasih telah berbelanja!_ 🙏\n`;
+    text += `_Simpan struk ini sebagai bukti sah._`;
+
+    // --- 6. KIRIM ---
     const phone = order.customerPhone || customerForm.customerPhone;
     const target = phone ? phone.replace(/\D/g, '').replace(/^0/, '62') : '';
+
     const url = target
       ? `https://wa.me/${target}?text=${encodeURIComponent(text)}`
       : `https://wa.me/?text=${encodeURIComponent(text)}`;
+
     window.open(url, '_blank');
   };
 
