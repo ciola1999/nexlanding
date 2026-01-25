@@ -36,17 +36,22 @@ type CustomerData = {
   customerPhone?: string;
   payments: PaymentDetail[];
 
-  // 🔥 UPDATE 1: Tambahkan field untuk menerima info Pajak dari Frontend
+  // Field Member & Diskon
+  memberId?: number | null;
+  discountId?: number | null;
+
+  // Snapshot Keuangan
   summary: {
+    subtotal: number;
+    discountAmount: number;
     taxAmount: number;
-    // Jika nanti ada diskon, bisa taruh sini juga
-    // discountAmount?: number;
+    totalAmount: number;
   };
 };
 
 export async function processCheckout(
   items: CheckoutItem[],
-  customer: CustomerData
+  customer: CustomerData // <--- Perhatikan nama variabel ini adalah 'customer'
 ): Promise<CheckoutResult> {
   // 1. Validasi Input Dasar
   if (!items.length) {
@@ -82,19 +87,21 @@ export async function processCheckout(
 
       const nextQueueNumber = (lastOrderToday?.queueNumber ?? 0) + 1;
 
-      // B. Hitung Total Tagihan
+      // B. Hitung Total Tagihan (Server Side Calculation)
 
-      // 1. Hitung Subtotal (Harga murni barang)
+      // 1. Hitung Subtotal Murni (Harga barang di DB/Cart)
       const subtotal = items.reduce(
         (sum, item) => sum + item.price * item.quantity,
         0
       );
 
-      // 🔥 UPDATE 2: Ambil Pajak dari parameter yang dikirim Frontend
-      const taxAmount = customer.summary?.taxAmount || 0;
+      // 2. Ambil Diskon & Pajak dari parameter Frontend
+      // (Idealnya diskon divalidasi ulang di sini, tapi ambil dari summary dulu agar cepat)
+      const discountAmount = customer.summary.discountAmount || 0;
+      const taxAmount = customer.summary.taxAmount || 0;
 
-      // 🔥 UPDATE 3: Hitung Total Akhir (Subtotal + Tax)
-      const finalTotalAmount = subtotal + taxAmount;
+      // 3. 🔥 PERBAIKAN RUMUS: (Subtotal - Diskon) + Pajak
+      const finalTotalAmount = subtotal - discountAmount + taxAmount;
 
       // Logic Validasi Pembayaran
       const totalPaid = customer.payments.reduce((sum, p) => sum + p.amount, 0);
@@ -102,7 +109,7 @@ export async function processCheckout(
       // Cek apakah uang pembayaran kurang (gunakan finalTotalAmount)
       if (totalPaid < finalTotalAmount) {
         throw new Error(
-          `Pembayaran kurang! Total Tagihan: ${finalTotalAmount}, Total Dibayar: ${totalPaid}`
+          `Pembayaran kurang! Tagihan: ${finalTotalAmount}, Dibayar: ${totalPaid}`
         );
       }
 
@@ -116,11 +123,17 @@ export async function processCheckout(
       const [insertedOrder] = await tx
         .insert(orders)
         .values({
-          // 🔥 UPDATE 4: Masukkan data yang lengkap ke DB
-          subtotal: subtotal, // Pastikan kolom ini ada di schema
-          taxAmount: taxAmount, // Pastikan kolom ini ada di schema
-          totalAmount: finalTotalAmount, // Ini sekarang sudah termasuk pajak
+          // Data Keuangan
+          subtotal: subtotal,
+          discountAmount: discountAmount, // 🔥 PENTING: Simpan nominal diskon
+          taxAmount: taxAmount,
+          totalAmount: finalTotalAmount,
 
+          // Data Relasi
+          memberId: customer.memberId ?? null, // 🔥 FIX: Gunakan 'customer', bukan 'data'
+          discountId: customer.discountId ?? null, // 🔥 FIX: Gunakan 'customer', bukan 'data'
+
+          // Data Order Lainnya
           orderType: customer.orderType,
           paymentMethod: mainPaymentMethod,
           amountPaid: totalPaid,

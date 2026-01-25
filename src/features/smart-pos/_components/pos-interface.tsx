@@ -1,12 +1,20 @@
 'use client';
 
 import * as React from 'react';
-import { useMemo, useTransition, useEffect, useRef, useCallback } from 'react';
+import {
+  useMemo,
+  useTransition,
+  useEffect,
+  useRef,
+  useCallback,
+  useState,
+} from 'react';
 import Image from 'next/image';
 import { toast } from 'sonner';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { useReactToPrint } from 'react-to-print';
+import { AnimatePresence, motion } from 'framer-motion'; // Untuk animasi halus
 
 // --- ICONS ---
 import {
@@ -26,6 +34,8 @@ import {
   Printer,
   MessageCircle,
   Utensils,
+  TicketPercent,
+  X,
 } from 'lucide-react';
 
 // --- COMPONENTS & UTILS ---
@@ -48,6 +58,10 @@ import {
 } from '@/components/ui/dialog';
 import { cn, formatRupiah } from '@/lib/utils';
 import { processCheckout } from '@/features/smart-pos/_actions/transaction';
+
+import { MemberSelector } from './member-selector'; // Pastikan path sesuai
+import { validateDiscount } from '../_actions/action'; // Server Action
+import { type Member, type Discount } from '../db/schema'; // Type DB
 
 // --- TYPES (Strict Type-Safety) ---
 import type { Products, CartItem } from '@/types';
@@ -75,6 +89,24 @@ interface PaymentItem {
   method: 'cash' | 'debit' | 'qris';
   amount: number;
   referenceId: string;
+}
+
+// 🔥 BARU: Interface untuk State Data Sukses (Struk)
+interface SuccessTransactionState {
+  order: Order; // (Idealnya gunakan type 'Order' dari schema, tapi 'any' sementara aman)
+  items: {
+    id: number;
+    name: string; // Pastikan CartItem kamu punya field name
+    quantity: number;
+    price: number;
+  }[];
+  cashReceived: number;
+  change: number;
+  payments: PaymentItem[];
+
+  // 🔥 FIELD TAMBAHAN (Solusi Error Kamu)
+  member?: Member | null;
+  discountAmount?: number;
 }
 
 export default function POSInterface({
@@ -116,17 +148,21 @@ export default function POSInterface({
   const [splitPayments, setSplitPayments] = React.useState<PaymentItem[]>([]);
 
   // Result State (Untuk Dialog Sukses)
-  const [successData, setSuccessData] = React.useState<{
-    order: Order;
-    items: CartItem[];
-    cashReceived?: number;
-    change?: number;
-    payments?: PaymentItem[];
-  } | null>(null);
+  // Pastikan type 'Member' sudah diimport di paling atas file
+  // import type { Member } from '@/db/schema';
+
+  const [successData, setSuccessData] =
+    useState<SuccessTransactionState | null>(null);
 
   // --- CALCULATIONS (TOP LEVEL - JANGAN DI DALAM FUNGSI LAIN) ---
 
-  // 1. Hitung Rate Pajak
+  // ... State Member & Diskon yang sudah kamu tulis (Pertahankan ini)
+  const [selectedMember, setSelectedMember] = useState<Member | null>(null);
+  const [activeDiscount, setActiveDiscount] = useState<Discount | null>(null);
+  const [voucherCode, setVoucherCode] = useState('');
+  const [isCheckingVoucher, startCheckVoucher] = useTransition();
+
+  // 1. Hitung Rate Pajak (Tetap sama)
   const taxRate = useMemo(
     () => (taxesData.length > 0 ? parseFloat(taxesData[0].rate) : 0),
     [taxesData]
@@ -136,22 +172,64 @@ export default function POSInterface({
     [taxesData]
   );
 
-  // 2. Hitung Total & Subtotal (Gunakan Math.round di sini)
-  const { subtotal, taxAmount, finalTotal } = useMemo(() => {
+  // 2. 🔥 UPDATE LOGIC: Subtotal -> Diskon -> Pajak -> Total
+  const { subtotal, discountAmount, taxAmount, finalTotal } = useMemo(() => {
+    // A. Hitung Subtotal Murni
     const sub = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
-    const tax = Math.round((sub * taxRate) / 100); // Presisi: Bulatkan pajak
+
+    // B. Hitung Nominal Diskon
+    let disc = 0;
+    if (activeDiscount) {
+      if (activeDiscount.type === 'PERCENTAGE') {
+        // Rumus: Subtotal * (Nilai% / 100)
+        disc = Math.round(sub * (Number(activeDiscount.value) / 100));
+      } else {
+        // Rumus: Potongan Tetap (Fixed)
+        disc = Math.round(Number(activeDiscount.value));
+      }
+
+      // Safety: Jangan sampai diskon lebih besar dari harga barang
+      if (disc > sub) disc = sub;
+    }
+
+    // C. Hitung DPP (Dasar Pengenaan Pajak) / Taxable Amount
+    const taxableAmount = sub - disc;
+
+    // D. Hitung Pajak (Dari harga yang sudah didiskon)
+    // Rumus: DPP * (Rate / 100)
+    const tax = Math.round((taxableAmount * taxRate) / 100);
+
     return {
       subtotal: sub,
+      discountAmount: disc, // Return variable baru ini
       taxAmount: tax,
-      finalTotal: sub + tax, // Integer + Integer = Aman
+      finalTotal: taxableAmount + tax, // Total yang harus dibayar
     };
-  }, [cart, taxRate]);
+  }, [cart, taxRate, activeDiscount]); // Tambahkan activeDiscount ke dependency
 
-  // 3. Hitung Split Bill
+  // 3. Hitung Split Bill (Tetap sama)
   const totalPaidSplit = useMemo(
     () => splitPayments.reduce((sum, p) => sum + (p.amount || 0), 0),
     [splitPayments]
   );
+
+  // 4. 🔥 NEW: Handler Apply Voucher
+  const handleApplyVoucher = () => {
+    if (!voucherCode) return;
+
+    startCheckVoucher(async () => {
+      // Pastikan import validateDiscount dari actions.ts
+      const res = await validateDiscount(voucherCode);
+
+      if (res.success && res.data) {
+        setActiveDiscount(res.data);
+        toast.success('Voucher berhasil digunakan!');
+        setVoucherCode(''); // Reset input
+      } else {
+        toast.error(res.error || 'Kode voucher tidak valid');
+      }
+    });
+  };
 
   // Pastikan remaining tidak minus (Math.max)
   const remainingSplit = Math.max(0, finalTotal - totalPaidSplit);
@@ -295,7 +373,6 @@ export default function POSInterface({
     // B. Logic Split Bill vs Single Payment
     if (isSplitMode) {
       if (remainingSplit > 100) {
-        // Toleransi 100 rupiah untuk pembulatan
         toast.error(`Pembayaran kurang ${formatRupiah(remainingSplit)}`);
         return;
       }
@@ -334,7 +411,7 @@ export default function POSInterface({
       finalPayments = [
         {
           method: customerForm.paymentMethod,
-          amount: amountToPay, // Simpan amount yang dibayar (bisa lebih kalau cash)
+          amount: amountToPay,
           referenceId: refId,
         },
       ];
@@ -346,27 +423,46 @@ export default function POSInterface({
         cart.map((i) => ({ id: i.id, quantity: i.quantity, price: i.price })),
         {
           ...customerForm,
+          // 🔥 BARU: Kirim Data Member & Diskon ke Backend
+          memberId: selectedMember?.id ?? null,
+          discountId: activeDiscount?.id ?? null,
+
           payments: finalPayments,
+
+          // 🔥 BARU: Kirim Rincian Angka Lengkap
           summary: {
+            subtotal: subtotal,
+            discountAmount: discountAmount, // Penting untuk laporan
             taxAmount: taxAmount,
+            totalAmount: finalTotal,
           },
         }
       );
 
       if (res.success && res.data) {
+        // Update data untuk ditampilkan di Struk/Success Dialog
         setSuccessData({
           order: res.data,
           items: [...cart],
           cashReceived: isSplitMode ? totalPaidSplit : Number(cashGiven),
           change: isSplitMode ? 0 : Number(cashGiven) - finalTotal,
           payments: finalPayments,
+          // 🔥 BARU: Kirim info ini agar struk bisa print nama member & diskon
+          member: selectedMember,
+          discountAmount: discountAmount,
         });
 
-        // Reset
+        // Reset Semua State
         setCart([]);
         setCashGiven('');
         setIsSplitMode(false);
         setSplitPayments([]);
+
+        // 🔥 BARU: Reset Member & Voucher
+        setSelectedMember(null);
+        setActiveDiscount(null);
+        setVoucherCode('');
+
         setIsCheckoutOpen(false);
         setIsCartSheetOpen(false);
         setCustomerForm({
@@ -376,7 +472,7 @@ export default function POSInterface({
           orderType: 'dine_in',
           paymentMethod: 'cash',
         });
-        toast.success('Transaksi Berhasil Simpan!');
+        toast.success('Transaksi Berhasil Disimpan!');
       } else {
         toast.error(res.message || 'Gagal memproses transaksi');
       }
@@ -640,7 +736,7 @@ export default function POSInterface({
                   )}
                 >
                   {/* Image Aspect Ratio Lock 4:3 */}
-                  <div className="aspect-[4/3] relative bg-muted w-full overflow-hidden">
+                  <div className="aspect-4/3 relative bg-muted w-full overflow-hidden">
                     {product.imageUrl ? (
                       <Image
                         src={product.imageUrl}
@@ -691,7 +787,7 @@ export default function POSInterface({
         </div>
 
         {/* RIGHT: SIDEBAR (Desktop Only) */}
-        <div className="hidden lg:flex w-[380px] border-l border-border/40 bg-card/50 flex-col shrink-0 h-full backdrop-blur-sm shadow-xl z-10">
+        <div className="hidden lg:flex w-95 border-l border-border/40 bg-card/50 flex-col shrink-0 h-full backdrop-blur-sm shadow-xl z-10">
           <div className="p-4 border-b border-border/40 flex items-center justify-between bg-card/80">
             <div className="flex items-center gap-2 font-bold text-foreground">
               <div className="bg-primary/10 p-1.5 rounded-md text-primary">
@@ -797,15 +893,30 @@ export default function POSInterface({
             </ScrollArea>
 
             <div className="p-4 border-t border-border bg-background/50 space-y-1">
+              {/* 1. Subtotal */}
               <div className="flex justify-between text-sm text-muted-foreground">
                 <span>Subtotal</span>
                 <span>{formatRupiah(subtotal)}</span>
               </div>
+
+              {/* 2. Diskon (Hanya muncul jika ada) */}
+              {discountAmount > 0 && (
+                <div className="flex justify-between text-sm text-emerald-600 font-medium">
+                  <span>Diskon ({activeDiscount?.code})</span>
+                  <span>- {formatRupiah(discountAmount)}</span>
+                </div>
+              )}
+
+              {/* 3. Pajak (CUKUP SATU KALI SAJA DI SINI) */}
               <div className="flex justify-between text-sm text-muted-foreground">
                 <span>Pajak ({taxRate}%)</span>
                 <span>{formatRupiah(taxAmount)}</span>
               </div>
+
+              {/* Separator */}
               <div className="h-px bg-border my-2" />
+
+              {/* 4. Grand Total */}
               <div className="flex justify-between font-bold text-base">
                 <span>Total Tagihan</span>
                 <span className="text-primary">{formatRupiah(finalTotal)}</span>
@@ -814,7 +925,7 @@ export default function POSInterface({
           </div>
 
           {/* KOLOM KANAN: FORM PEMBAYARAN */}
-          <div className="flex-1 flex flex-col h-[80vh] md:h-[600px] bg-card overflow-hidden">
+          <div className="flex-1 flex flex-col h-[80vh] md:h-150 bg-card overflow-hidden">
             <DialogHeader className="p-4 border-b border-border shrink-0">
               <DialogTitle>Konfirmasi Pembayaran</DialogTitle>
               <DialogDescription className="hidden md:block">
@@ -926,6 +1037,97 @@ export default function POSInterface({
                       </div>
                     </div>
                   </div>
+
+                  {/* ========================================================= */}
+                  {/* [START] INSERT: INTEGRASI MEMBER & VOUCHER DI CHECKOUT */}
+                  {/* ========================================================= */}
+                  <div className="bg-muted/30 p-3 rounded-lg border border-dashed space-y-3">
+                    {/* A. Selector Member */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase">
+                        Member / Pelanggan
+                      </label>
+                      <MemberSelector
+                        selectedMember={selectedMember}
+                        onSelect={(member) => {
+                          setSelectedMember(member);
+                          // OTOMATIS: Isi form nama & hp jika member dipilih
+                          setCustomerForm((prev) => ({
+                            ...prev,
+                            customerName: member.name,
+                            customerPhone: member.phone,
+                          }));
+                        }}
+                      />
+                    </div>
+
+                    {/* B. Input Voucher */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase">
+                        Kode Promo
+                      </label>
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <TicketPercent className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            placeholder="Kode..."
+                            className="pl-9 h-9 bg-background"
+                            value={voucherCode}
+                            onChange={(e) => setVoucherCode(e.target.value)}
+                            disabled={!!activeDiscount}
+                          />
+                        </div>
+                        <Button
+                          size="sm"
+                          variant={activeDiscount ? 'destructive' : 'secondary'}
+                          onClick={
+                            activeDiscount
+                              ? () => setActiveDiscount(null)
+                              : handleApplyVoucher
+                          }
+                          disabled={isCheckingVoucher}
+                        >
+                          {isCheckingVoucher ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : activeDiscount ? (
+                            <X className="h-3 w-3" />
+                          ) : (
+                            'Pakai'
+                          )}
+                        </Button>
+                      </div>
+
+                      {/* Info Voucher Aktif */}
+                      <AnimatePresence>
+                        {activeDiscount && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="mt-2 text-xs text-emerald-600 bg-emerald-50 border border-emerald-100 p-2 rounded flex justify-between items-center">
+                              <span className="font-bold flex items-center gap-1">
+                                <TicketPercent className="h-3 w-3" />{' '}
+                                {activeDiscount.code}
+                              </span>
+                              <span>
+                                Hemat{' '}
+                                {new Intl.NumberFormat('id-ID', {
+                                  style: 'currency',
+                                  currency: 'IDR',
+                                  maximumFractionDigits: 0,
+                                }).format(discountAmount)}
+                              </span>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                  {/* ========================================================= */}
+                  {/* [END] INSERT */}
+                  {/* ========================================================= */}
 
                   <div className="h-px bg-border/50" />
 
@@ -1215,7 +1417,7 @@ export default function POSInterface({
                   Batal
                 </Button>
                 <Button
-                  className="flex-[2] h-12 font-bold text-base shadow-lg shadow-primary/20"
+                  className="flex-2 h-12 font-bold text-base shadow-lg shadow-primary/20"
                   disabled={
                     isPending ||
                     // FIX: Pastikan cashGiven diubah jadi 0 jika string kosong saat perbandingan
